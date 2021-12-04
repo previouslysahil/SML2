@@ -3,6 +3,8 @@ import XCTest
 
 final class SML2Tests: XCTestCase {
     
+    let parallel = true
+    
     func test1() throws {
         // SMLGraph currently does not check to see if whole graph is connected since we are only adding nodes by the root
         let a = SMLUnit(4)
@@ -13,21 +15,21 @@ final class SML2Tests: XCTestCase {
         }
         let J = loss(a, b)
         // Forward and backward prop wrt J through session
-        let (out, grads) = Session().run(J)
+        let (out, grads) = Session(parallel: parallel).run(J)
         print("----------\n", out)
         print(grads[J] ?? "NIL", grads[a] ?? "NIL", grads[b] ?? "NIL")
         // Test for correctness
         let epsilon = SMLUnit(0.00000001)
         let grad_a_numerical = (loss(a + epsilon, b) - loss(a - epsilon, b)) / (SMLUnit(2.0) * epsilon)
         let graph2 = SMLGraph(grad_a_numerical)
-        graph2.forward()
+        graph2.fwd()
         print(grad_a_numerical.out ?? "NIL")
-        let _ = graph2.backward()
+        let _ = graph2.bwd()
         let grad_b_numerical = (loss(a, b + epsilon) - loss(a, b - epsilon)) / (SMLUnit(2.0) * epsilon)
         let graph3 = SMLGraph(grad_b_numerical)
-        graph3.forward()
+        graph3.fwd()
         print(grad_b_numerical.out ?? "NIL")
-        let _ = graph3.backward()
+        let _ = graph3.bwd()
     }
     
     func test2() throws {
@@ -40,21 +42,21 @@ final class SML2Tests: XCTestCase {
         }
         let J = loss(a, b)
         // Forward and backward prop wrt J through session
-        let (out, grads) = Session().run(J)
+        let (out, grads) = Session(parallel: parallel).run(J)
         print("----------\n", out)
         print(grads[J] ?? "NIL", grads[a] ?? "NIL", grads[b] ?? "NIL")
         // Test for correctness
         let epsilon = SMLUnit(0.00000001)
         let grad_a_numerical = (loss(a + epsilon, b) - loss(a - epsilon, b)) / (SMLUnit(2.0) * epsilon)
         let graph2 = SMLGraph(grad_a_numerical)
-        graph2.forward()
+        graph2.fwd()
         print(grad_a_numerical.out ?? "NIL")
-        let _ = graph2.backward()
+        let _ = graph2.bwd()
         let grad_b_numerical = (loss(a, b + epsilon) - loss(a, b - epsilon)) / (SMLUnit(2.0) * epsilon)
         let graph3 = SMLGraph(grad_b_numerical)
-        graph3.forward()
+        graph3.fwd()
         print(grad_b_numerical.out ?? "NIL")
-        let _ = graph3.backward()
+        let _ = graph3.bwd()
     }
     
     func test3() throws {
@@ -69,25 +71,25 @@ final class SML2Tests: XCTestCase {
         }
         let J = loss(a, b, c)
         // Forward and backward prop wrt J through session
-        let (out, grads) = Session().run(J)
+        let (out, grads) = Session(parallel: parallel).run(J)
         print("----------\n", out)
         print(grads[J] ?? "NIL", grads[a] ?? "NIL", grads[b] ?? "NIL", grads[c] ?? "NIL")
         // Test for correctness
         let epsilon = SMLUnit(0.00000001)
         let grad_a_numerical = (loss(a + epsilon, b, c) - loss(a - epsilon, b, c)) / (SMLUnit(2.0) * epsilon)
         let graph2 = SMLGraph(grad_a_numerical)
-        graph2.forward()
+        graph2.fwd()
         print(grad_a_numerical.out ?? "NIL")
-        let _ = graph2.backward()
+        let _ = graph2.bwd()
         let grad_b_numerical = (loss(a, b + epsilon, c) - loss(a, b - epsilon, c)) / (SMLUnit(2.0) * epsilon)
         let graph3 = SMLGraph(grad_b_numerical)
-        graph3.forward()
+        graph3.fwd()
         print(grad_b_numerical.out ?? "NIL")
-        let _ = graph3.backward()
+        let _ = graph3.bwd()
         let grad_c_numerical = (loss(a, b, c + epsilon) - loss(a, b, c - epsilon)) / (SMLUnit(2.0) * epsilon)
         let graph4 = SMLGraph(grad_c_numerical)
-        graph4.forward()
+        graph4.fwd()
         print(grad_c_numerical.out ?? "NIL")
-        let _ = graph4.backward()
+        let _ = graph4.bwd()
     }
 }

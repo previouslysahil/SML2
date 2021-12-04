@@ -16,21 +16,34 @@ class SMLGraph {
     // Nodes sorted in high to low dependencies order
     // (root is first element AKA most dependent)
     var nodes: [SMLUnit] = []
+    // FOR PARALLEL
+    // Keys for each depth, less dependencies as depth increases
+    // (root is at first depth AKA most dependent)
+    // This could potentially be optimized to use pointers? instead of object
+    var nodes_parallel: [Int: [(node: SMLUnit, parent: SMLUnit?, gradIdx: Int)]] = [:]
+    // Parallel toggle
+    var parallel: Bool = false
     
     // MARK: Init
-    init(_ root: SMLUnit) {
-        topology_sort(root)
+    init(_ root: SMLUnit, parallel: Bool = false) {
+        set(root, parallel: parallel)
     }
     
     init() {}
     
-    func set(_ root: SMLUnit) {
-        topology_sort(root)
+    func set(_ root: SMLUnit, parallel: Bool = false) {
+        self.parallel = parallel
+        // Sort graph based on paralleization
+        if parallel {
+            topology_sort_parallel(root)
+        } else {
+            topology_sort(root)
+        }
     }
     
     // MARK: Topology Sort (BFS)
     // DOES NOT CHECK FOR CYCLES
-    func topology_sort(_ root: SMLUnit) {
+    private func topology_sort(_ root: SMLUnit) {
         // Make empty queue
         var queue = [SMLUnit]()
         // Add root to our queue
@@ -48,9 +61,47 @@ class SMLGraph {
         }
     }
     
-    // MARK: Forward
+    // MARK: Topology Sort (BFS) FOR PARALLEL
+    // DOES NOT CHECK FOR CYCLES
+    private func topology_sort_parallel(_ root: SMLUnit) {
+        // Make empty queue
+        var queue = [(node: SMLUnit, depth: Int, parent: SMLUnit?, gradIdx: Int)]()
+        // Add root to our queue
+        queue.append((root, 1, nil, -1))
+        // Dequeue until no more children
+        while !queue.isEmpty {
+            // Remove first element in our queue
+            let curr = queue.removeFirst()
+            // Add to our nodes
+            if nodes_parallel[curr.depth] == nil {
+                // First node so make array
+                nodes_parallel[curr.depth] = [(curr.node, curr.parent, curr.gradIdx)]
+            } else {
+                // ith node so append to existing array
+                nodes_parallel[curr.depth]!.append((curr.node, curr.parent, curr.gradIdx))
+            }
+            // Queue curr's children
+            var i = 0
+            for child in curr.node.inputs {
+                queue.append((child, curr.depth + 1, curr.node, i))
+                i += 1
+            }
+        }
+    }
+    
+    // MARK: Forward Exposed
     @discardableResult
-    func forward() -> Double {
+    func fwd() -> Double {
+        // Run fwd based on paralleization
+        if parallel {
+            return forward_parallel()
+        } else {
+            return forward()
+        }
+    }
+    
+    // MARK: Forward
+    private func forward() -> Double {
         // Set tracking if we already forwarded one of the nodes
         var forwarded = Set<SMLUnit>()
         // Go through all nodes starting at lowest dependecy and forward
@@ -64,9 +115,47 @@ class SMLGraph {
         return nodes.first!.out!
     }
     
-    // MARK: Backward
+    // MARK: Forward FOR PARALLEL
+    private func forward_parallel() -> Double {
+        // Set tracking if we already forwarded one of the nodes
+        var forwarded = Set<SMLUnit>()
+        // Go through all nodes starting at lowest dependecy and forward
+        // This sorted keys could be optimized since it is used in forward_parallel and backward_bfs_parallel
+        for depth in nodes_parallel.keys.sorted().reversed() {
+            // Make our queue for nodes to be forwarded
+            var queue = [SMLUnit]()
+            // Queue nodes that should be forwarded
+            for (node, _, _) in nodes_parallel[depth]! {
+                // check since the same node dependency may have been forwarded at a lower depth
+                if !forwarded.contains(node) {
+                    // Queue this node
+                    queue.append(node)
+                    // Insert it in forwarded
+                    forwarded.insert(node)
+                }
+            }
+            // Concurrently forwarded our queued nodes
+            DispatchQueue.concurrentPerform(iterations: queue.count) { i in
+                queue[i].forward()
+            }
+        }
+        // dict[1] should always be just our root node
+        return nodes_parallel[1]!.first!.node.out!
+    }
+    
+    // MARK: Backward Exposed
     @discardableResult
-    func backward(seed: Double = 1.0) -> [SMLUnit: Double] {
+    func bwd() -> [SMLUnit: Double] {
+        // Run bwd based on paralleization
+        if parallel {
+            return backward_parallel()
+        } else {
+            return backward()
+        }
+    }
+    
+    // MARK: Backward
+    private func backward(seed: Double = 1.0) -> [SMLUnit: Double] {
         // Make set to contain visited
         var grads = [SMLUnit: Double]()
         // BFS from root and propagate gradient backwards
@@ -99,6 +188,78 @@ class SMLGraph {
             for (child, grad) in zip(curr.inputs, curr.grads) {
                 // Add this child to queue so we can continue our BFS backpropagation
                 queue.append((child, grad))
+            }
+        }
+    }
+    
+    // MARK: Backward FOR PARALLEL
+    private func backward_parallel(seed: Double = 1.0) -> [SMLUnit: Double] {
+        // Make set to contain visited
+        var grads = [SMLUnit: Double]()
+        // BFS from root and propagate gradient backwards
+        backward_bfs_parallel(seed: seed, grads: &grads)
+        return grads
+    }
+    
+    // MARK: Backward BFS PARALLEL
+    // DOES NOT CHECK FOR CYCLES
+    private func backward_bfs_parallel(seed: Double, grads: inout [SMLUnit: Double]) {
+        // Iterate from our lowest depth (lowest dependency)
+        // This sorted keys could be optimized since it is used in forward_parallel and backward_bfs_parallel
+        for depth in nodes_parallel.keys.sorted() {
+            // Special solution if first depth (only root, wrt to itself)
+            if depth == 1 {
+                // Get our root
+                let (root, _, _) = nodes_parallel[depth]!.first!
+                // roots dOut will always be our seed (usually 1)
+                root.backward(dOut: seed)
+                // Add root to our visited and set gradient
+                grads[root] = seed
+            } else {
+                // Make our queues
+                var queues = [[(node: SMLUnit, dOut: Double)]]()
+                // For each node at each depth calculate it's chain ruled gradient
+                for (node, parent, idx) in nodes_parallel[depth]! {
+                    // Find this nodes dOut through it parents gradients
+                    let dOut = parent!.grads[idx]
+                    // Entered check to see if we need to make a new queue
+                    var entered = false
+                    // Check all our queues for no node duplicates
+                    for i in 0..<queues.count {
+                        // Queue this node to be forwarded if no duplicates in this queue
+                        // This contains could potentially be optimized since it's O(n) vs a Set contains O(1)
+                        if !queues[i].contains(where: { $0.node == node }) {
+                            // Queue node and dOut
+                            queues[i].append((node, dOut))
+                            // Set entered check
+                            entered = true
+                            break
+                        }
+                    }
+                    // Make a new queue with this node if entered not checked
+                    if entered == false {
+                        // Queue node and dOut in new queue
+                        queues.append([(node, dOut)])
+                    }
+                    // Add node to our visited
+                    if grads[node] != nil {
+                        // Increment gradient if already contributing to final rate of change
+                        grads[node]! += dOut
+                    } else {
+                        // Set gradient if not already contributing to final rate of change
+                        grads[node] = dOut
+                    }
+                }
+                // Go through each queue which will contain no duplicate nodes
+                for queue in queues {
+                    // Dispatch concurrently since we have no duplicates
+                    DispatchQueue.concurrentPerform(iterations: queue.count) { i in
+                        // Break tuple into node and dOut
+                        let (node, dOut) = queue[i]
+                        // Backward dOut for this node
+                        node.backward(dOut: dOut)
+                    }
+                }
             }
         }
     }
@@ -297,13 +458,16 @@ extension SMLUnit {
 class Session {
     
     var graph: SMLGraph = SMLGraph()
+    var parallel: Bool = false
     
-    init() {}
+    init(parallel: Bool = false) {
+        self.parallel = parallel
+    }
     
     func run(_ root: SMLUnit) -> (out: Double, grads: [SMLUnit: Double]) {
-        graph.set(root)
-        let out = graph.forward()
-        let grads = graph.backward()
+        graph.set(root, parallel: parallel)
+        let out = graph.fwd()
+        let grads = graph.bwd()
         return (out, grads)
     }
 }
