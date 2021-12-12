@@ -19,20 +19,23 @@ class SMLGraph {
     // FOR PARALLEL
     // Keys for each depth, less dependencies as depth increases
     // (root is at first depth AKA most dependent)
-    // This could potentially be optimized to use pointers? instead of object
+    // This could potentially be optimized to use pointers? instead of actual object ref
     var nodes_parallel: [Int: [(node: SMLUnit, parent: SMLUnit?, gradIdx: Int)]] = [:]
     // Parallel toggle
     var parallel: Bool = false
+    // Seed
+    var seed: Tensor?
     
     // MARK: Init
-    init(_ root: SMLUnit, parallel: Bool = false) {
-        set(root, parallel: parallel)
+    init(_ root: SMLUnit, seed: Tensor, parallel: Bool = false) {
+        set(root, seed: seed, parallel: parallel)
     }
     
     init() {}
     
-    func set(_ root: SMLUnit, parallel: Bool = false) {
+    func set(_ root: SMLUnit, seed: Tensor, parallel: Bool = false) {
         self.parallel = parallel
+        self.seed = seed
         // Sort graph based on paralleization
         if parallel {
             topology_sort_parallel(root)
@@ -61,7 +64,7 @@ class SMLGraph {
         }
     }
     
-    // MARK: Topology Sort (BFS) FOR PARALLEL
+    // MARK: Topology Sort (BFS) PARALLEL
     // DOES NOT CHECK FOR CYCLES
     private func topology_sort_parallel(_ root: SMLUnit) {
         // Make empty queue
@@ -91,7 +94,7 @@ class SMLGraph {
     
     // MARK: Forward Exposed
     @discardableResult
-    func fwd() -> Double {
+    func fwd() -> Tensor {
         // Run fwd based on paralleization
         if parallel {
             return forward_parallel()
@@ -101,7 +104,7 @@ class SMLGraph {
     }
     
     // MARK: Forward
-    private func forward() -> Double {
+    private func forward() -> Tensor {
         // Set tracking if we already forwarded one of the nodes
         var forwarded = Set<SMLUnit>()
         // Go through all nodes starting at lowest dependecy and forward
@@ -115,8 +118,8 @@ class SMLGraph {
         return nodes.first!.out!
     }
     
-    // MARK: Forward FOR PARALLEL
-    private func forward_parallel() -> Double {
+    // MARK: Forward PARALLEL
+    private func forward_parallel() -> Tensor {
         // Set tracking if we already forwarded one of the nodes
         var forwarded = Set<SMLUnit>()
         // Go through all nodes starting at lowest dependecy and forward
@@ -145,19 +148,19 @@ class SMLGraph {
     
     // MARK: Backward Exposed
     @discardableResult
-    func bwd() -> [SMLUnit: Double] {
+    func bwd() -> [SMLUnit: Tensor] {
         // Run bwd based on paralleization
         if parallel {
-            return backward_parallel()
+            return backward_parallel(seed: seed!)
         } else {
-            return backward()
+            return backward(seed: seed!)
         }
     }
     
     // MARK: Backward
-    private func backward(seed: Double = 1.0) -> [SMLUnit: Double] {
+    private func backward(seed: Tensor) -> [SMLUnit: Tensor] {
         // Make set to contain visited
-        var grads = [SMLUnit: Double]()
+        var grads = [SMLUnit: Tensor]()
         // BFS from root and propagate gradient backwards
         backward_bfs(seed: seed, grads: &grads)
         return grads
@@ -165,9 +168,9 @@ class SMLGraph {
     
     // MARK: Backward BFS
     // DOES NOT CHECK FOR CYCLES
-    private func backward_bfs(seed: Double, grads: inout [SMLUnit: Double]) {
+    private func backward_bfs(seed: Tensor, grads: inout [SMLUnit: Tensor]) {
         // Make empty queue
-        var queue = [(SMLUnit, Double)]()
+        var queue = [(SMLUnit, Tensor)]()
         // Add our first node (root AKA most dependent) and the first gradient (usually 1) to queue
         queue.append((nodes.first!, seed))
         // BFS until queue is empty
@@ -177,7 +180,7 @@ class SMLGraph {
             // Add curr to our visited
             if grads[curr] != nil {
                 // Increment gradient if already contributing to final rate of change
-                grads[curr]! += dOut
+                grads[curr]! = grads[curr]! + dOut
             } else {
                 // Set gradient if not already contributing to final rate of change
                 grads[curr] = dOut
@@ -192,10 +195,10 @@ class SMLGraph {
         }
     }
     
-    // MARK: Backward FOR PARALLEL
-    private func backward_parallel(seed: Double = 1.0) -> [SMLUnit: Double] {
+    // MARK: Backward PARALLEL
+    private func backward_parallel(seed: Tensor) -> [SMLUnit: Tensor] {
         // Make set to contain visited
-        var grads = [SMLUnit: Double]()
+        var grads = [SMLUnit: Tensor]()
         // BFS from root and propagate gradient backwards
         backward_bfs_parallel(seed: seed, grads: &grads)
         return grads
@@ -203,7 +206,7 @@ class SMLGraph {
     
     // MARK: Backward BFS PARALLEL
     // DOES NOT CHECK FOR CYCLES
-    private func backward_bfs_parallel(seed: Double, grads: inout [SMLUnit: Double]) {
+    private func backward_bfs_parallel(seed: Tensor, grads: inout [SMLUnit: Tensor]) {
         // Iterate from our lowest depth (lowest dependency)
         // This sorted keys could be optimized since it is used in forward_parallel and backward_bfs_parallel
         for depth in nodes_parallel.keys.sorted() {
@@ -217,7 +220,7 @@ class SMLGraph {
                 grads[root] = seed
             } else {
                 // Make our queues
-                var queues = [[(node: SMLUnit, dOut: Double)]]()
+                var queues = [[(node: SMLUnit, dOut: Tensor)]]()
                 // For each node at each depth calculate it's chain ruled gradient
                 for (node, parent, idx) in nodes_parallel[depth]! {
                     // Find this nodes dOut through it parents gradients
@@ -244,7 +247,7 @@ class SMLGraph {
                     // Add node to our visited
                     if grads[node] != nil {
                         // Increment gradient if already contributing to final rate of change
-                        grads[node]! += dOut
+                        grads[node]! = grads[node]! + dOut
                     } else {
                         // Set gradient if not already contributing to final rate of change
                         grads[node] = dOut
@@ -276,20 +279,26 @@ class SMLUnit: Hashable {
     func hash(into hasher: inout Hasher) { return hasher.combine(ObjectIdentifier(self)) }
     
     var inputs: [SMLUnit]
-    var out: Double?
+    var out: Tensor?
     // This will contain the chain ruled gradients for the inputs to the unit
-    var grads: [Double] = []
+    var grads: [Tensor] = []
     var tag: String
     
-    init(_ out: Double? = nil, inputs: [SMLUnit] = [], tag: String = "") {
+    init(_ out: Tensor? = nil, inputs: [SMLUnit] = [], tag: String = "") {
         self.inputs = inputs
         self.out = out
         self.tag = tag
     }
     
+    init(_ out: Double, inputs: [SMLUnit] = [], tag: String = "") {
+        self.inputs = inputs
+        self.out = Tensor(out)
+        self.tag = tag
+    }
+    
     func forward() { }
     // dOut is the gradient for this node wrt to the root of the graph
-    func backward(dOut: Double?) {}
+    func backward(dOut: Tensor?) {}
     func add(to graph: SMLGraph) -> Self {
         graph.nodes.append(self)
         return self
@@ -319,13 +328,30 @@ class SMLAdd: SMLBinary {
         out = inputs[0].out! + inputs[1].out!
     }
     
-    override func backward(dOut: Double?) {
+    override func backward(dOut: Tensor?) {
+        // Clarify a and b
+        let a = inputs[0].out!
+        let b = inputs[1].out!
         // Gradient for input_nodes[0] AKA a
-        let gradA = 1.0
-        grads.append(dOut! * gradA)
+        var gradA = dOut!
+        var axis = 0
+        // Assumes a.shape.count == dOut!.shape.count
+        // Condense gradients for potential vector * matrix math
+        for dim in a.shape {
+            if dim == 1 { gradA = gradA.sum(axis: axis, keepDim: true) }
+            axis += 1
+        }
+        grads.append(gradA)
         // Gradient for input_nodes[1] AKA b
-        let gradB = 1.0
-        grads.append(dOut! * gradB)
+        var gradB = dOut!
+        axis = 0
+        // Assumes b.shape.count == dOut!.shape.count
+        // Condense gradients for potential vector * matrix math
+        for dim in b.shape {
+            if dim == 1 { gradB = gradB.sum(axis: axis, keepDim: true) }
+            axis += 1
+        }
+        grads.append(gradB)
     }
 }
 
@@ -336,16 +362,50 @@ class SMLMul: SMLBinary {
         out = inputs[0].out! * inputs[1].out!
     }
     
-    override func backward(dOut: Double?) {
+    override func backward(dOut: Tensor?) {
         // Clarify a and b
-        let a = inputs[0]
-        let b = inputs[1]
+        let a = inputs[0].out!
+        let b = inputs[1].out!
         // Gradient for input_nodes[0] AKA a
-        let gradA = b.out!
-        grads.append(dOut! * gradA)
-        // Gradient for input_nodes[0] AKA a
-        let gradB = a.out!
-        grads.append(dOut! * gradB)
+        var gradA = dOut! * b
+        var axis = 0
+        // Assumes a.shape.count == dOut!.shape.count
+        // Condense gradients for potential vector * matrix math
+        for dim in a.shape {
+            if dim == 1 { gradA = gradA.sum(axis: axis, keepDim: true) }
+            axis += 1
+        }
+        grads.append(gradA)
+        // Gradient for input_nodes[1] AKA b
+        var gradB = dOut! * a
+        axis = 0
+        // Assumes b.shape.count == dOut!.shape.count
+        // Condense gradients for potential vector * matrix math
+        for dim in b.shape {
+            if dim == 1 { gradB = gradB.sum(axis: axis, keepDim: true) }
+            axis += 1
+        }
+        grads.append(gradB)
+    }
+}
+
+// MARK: SMLMatMul
+class SMLMatMul: SMLBinary {
+    
+    override func forward() {
+        out = inputs[0].out! <*> inputs[1].out!
+    }
+    
+    override func backward(dOut: Tensor?) {
+        // Clarify a and b
+        let a = inputs[0].out!
+        let b = inputs[1].out!
+        // Gradient for input_nodes[0] aka a
+        let gradA = b.transpose()
+        grads.append(dOut! <*> gradA)
+        // Gradient for input_nodes[1] aka b
+        let gradB = a.transpose()
+        grads.append(gradB <*> dOut!)
     }
 }
 
@@ -356,11 +416,11 @@ class SMLInv: SMLUnary {
         out = 1.0 / inputs[0].out!
     }
     
-    override func backward(dOut: Double?) {
+    override func backward(dOut: Tensor?) {
         // Clarify a
-        let a = inputs[0]
+        let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
-        let gradA = -1.0 / pow(a.out!, 2.0)
+        let gradA = -1.0 / a.pow(2.0)
         grads.append(dOut! * gradA)
     }
 }
@@ -372,7 +432,7 @@ class SMLNeg: SMLUnary {
         out = -inputs[0].out!
     }
     
-    override func backward(dOut: Double?) {
+    override func backward(dOut: Tensor?) {
         // Gradient for input_nodes[0] AKA a
         let gradA = -1.0
         grads.append(dOut! * gradA)
@@ -383,14 +443,14 @@ class SMLNeg: SMLUnary {
 class SMLSin: SMLUnary {
     
     override func forward() {
-        out = sin(inputs[0].out!)
+        out = inputs[0].out!.sin()
     }
     
-    override func backward(dOut: Double?) {
+    override func backward(dOut: Tensor?) {
         // Clarify a
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
-        let gradA = cos(a)
+        let gradA = a.cos()
         grads.append(dOut! * gradA)
     }
 }
@@ -399,10 +459,10 @@ class SMLSin: SMLUnary {
 class SMLExp: SMLUnary {
     
     override func forward() {
-        out = exp(inputs[0].out!)
+        out = inputs[0].out!.exp()
     }
     
-    override func backward(dOut: Double?) {
+    override func backward(dOut: Tensor?) {
         // Gradient for input_nodes[0] AKA a
         let gradA = out!
         grads.append(dOut! * gradA)
@@ -413,15 +473,66 @@ class SMLExp: SMLUnary {
 class SMLLog: SMLUnary {
     
     override func forward() {
-        out = log(inputs[0].out! + 0.00000001)
+        out = (inputs[0].out! + 0.00000001).log()
     }
     
-    override func backward(dOut: Double?) {
+    override func backward(dOut: Tensor?) {
         // Clarify a
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
         let gradA = 1.0 / a
         grads.append(dOut! * gradA)
+    }
+}
+
+// MARK: SMLSquare
+class SMLSquare: SMLUnary {
+    
+    override func forward() {
+        out = inputs[0].out!.pow(2)
+    }
+    
+    override func backward(dOut: Tensor?) {
+        // Clarify a
+        let a = inputs[0].out!
+        // Gradient for input_nodes[0] AKA a
+        let gradA = 2.0 * a
+        grads.append(dOut! * gradA)
+    }
+}
+
+// MARK: SMLPow
+class SMLPow: SMLUnary {
+    
+    var p: Double?
+    
+    override func forward() {
+        out = inputs[0].out!.pow(p!)
+    }
+    
+    override func backward(dOut: Tensor?) {
+        // Clarify a
+        let a = inputs[0].out!
+        // Gradient for input_nodes[0] AKA a
+        let gradA = p! * a.pow(p! - 1)
+        grads.append(dOut! * gradA)
+    }
+}
+
+// MARK: SMLSum
+class SMLSum: SMLUnary {
+    
+    override func forward() {
+        out = Tensor(inputs[0].out!.sum())
+    }
+    
+    override func backward(dOut: Tensor?) {
+        precondition(dOut!.shape.count == 0)
+        // Clarify a
+        let a = inputs[0].out!
+        // Gradient for input_nodes[0] AKA a
+        let gradA = Tensor(shape: a.shape, repeating: dOut!.grid.first!)
+        grads.append(gradA)
     }
 }
 
@@ -442,6 +553,10 @@ func - (lhs: SMLUnit, rhs: SMLUnit) -> SMLAdd {
     return SMLAdd(lhs, SMLNeg(rhs))
 }
 
+func <*> (lhs: SMLUnit, rhs: SMLUnit) -> SMLMatMul {
+    return SMLMatMul(lhs, rhs)
+}
+
 extension SMLUnit {
     func smlsin() -> SMLSin {
         return SMLSin(self)
@@ -451,6 +566,17 @@ extension SMLUnit {
     }
     func smllog() -> SMLLog {
         return SMLLog(self)
+    }
+    func smlsum() -> SMLSum {
+        return SMLSum(self)
+    }
+    func smlsquare() -> SMLSquare {
+        return SMLSquare(self)
+    }
+    func smlpow(_ a: Double) -> SMLPow {
+        let unit = SMLPow(self)
+        unit.p = a
+        return unit
     }
 }
 
@@ -464,8 +590,9 @@ class Session {
         self.parallel = parallel
     }
     
-    func run(_ root: SMLUnit) -> (out: Double, grads: [SMLUnit: Double]) {
-        graph.set(root, parallel: parallel)
+    // seed == scalar basically means we are assuming we are ADing a function that outputs a scalar (all cost functions should do this)
+    func run(_ root: SMLUnit, seed: Tensor = Tensor(1)) -> (out: Tensor, grads: [SMLUnit: Tensor]) {
+        graph.set(root, seed: seed, parallel: parallel)
         let out = graph.fwd()
         let grads = graph.bwd()
         return (out, grads)
