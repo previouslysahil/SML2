@@ -514,14 +514,18 @@ public func <*> (lhs: Tensor, rhs: Tensor) -> Tensor {
         t = Tensor(shape: [], repeating: 0)
         lhs.grid.withUnsafeBufferPointer { lhsPtr in
             rhs.grid.withUnsafeBufferPointer { rhsPtr in
-                cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, Int32(lhs.shape[0]), Int32(rhs.shape[1]), Int32(lhs.shape[1]), 1, lhsPtr.baseAddress!, Int32(lhs.shape[1]), rhsPtr.baseAddress!, Int32(rhs.shape[1]), 0, &t.grid, Int32(1))
+                t.grid.withUnsafeMutableBufferPointer { tPtr in
+                    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, Int32(lhs.shape[0]), Int32(rhs.shape[1]), Int32(lhs.shape[1]), 1, lhsPtr.baseAddress!, Int32(lhs.shape[1]), rhsPtr.baseAddress!, Int32(rhs.shape[1]), 0, tPtr.baseAddress!, Int32(1))
+                }
             }
         }
     } else {
         t = Tensor(shape: [lhs.shape[0], rhs.shape[1]], repeating: 0)
         lhs.grid.withUnsafeBufferPointer { lhsPtr in
             rhs.grid.withUnsafeBufferPointer { rhsPtr in
-                cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, Int32(lhs.shape[0]), Int32(rhs.shape[1]), Int32(lhs.shape[1]), 1, lhsPtr.baseAddress!, Int32(lhs.shape[1]), rhsPtr.baseAddress!, Int32(rhs.shape[1]), 0, &t.grid, Int32(t.shape[1]))
+                t.grid.withUnsafeMutableBufferPointer { tPtr in
+                    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, Int32(lhs.shape[0]), Int32(rhs.shape[1]), Int32(lhs.shape[1]), 1, lhsPtr.baseAddress!, Int32(lhs.shape[1]), rhsPtr.baseAddress!, Int32(rhs.shape[1]), 0, tPtr.baseAddress!, Int32(t.shape[1]))
+                }
             }
         }
     }
