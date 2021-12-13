@@ -268,7 +268,7 @@ class SMLGraph {
     }
 }
 
-// MARK: SMLNode
+// MARK: SMLUnit
 class SMLUnit: Hashable {
     
     // Hashable conformance
@@ -281,18 +281,20 @@ class SMLUnit: Hashable {
     var inputs: [SMLUnit]
     var out: Tensor?
     // This will contain the chain ruled gradients for the inputs to the unit
-    var grads: [Tensor] = []
+    var grads: [Tensor]
     var tag: String
     
     init(_ out: Tensor? = nil, inputs: [SMLUnit] = [], tag: String = "") {
         self.inputs = inputs
         self.out = out
+        self.grads = []
         self.tag = tag
     }
     
     init(_ out: Double, inputs: [SMLUnit] = [], tag: String = "") {
         self.inputs = inputs
         self.out = Tensor(out)
+        self.grads = []
         self.tag = tag
     }
     
@@ -310,6 +312,7 @@ class SMLBinary: SMLUnit {
     
     init(_ a: SMLUnit, _ b: SMLUnit, tag: String = "") {
         super.init(inputs: [a, b], tag: tag)
+        grads = Array(repeating: Tensor(shape: [], grid: []), count: 2)
     }
 }
 
@@ -318,6 +321,7 @@ class SMLUnary: SMLUnit {
     
     init(_ a: SMLUnit, tag: String = "") {
         super.init(inputs: [a], tag: tag)
+        grads = Array(repeating: Tensor(shape: [], grid: []), count: 1)
     }
 }
 
@@ -341,7 +345,7 @@ class SMLAdd: SMLBinary {
             if dim == 1 { gradA = gradA.sum(axis: axis, keepDim: true) }
             axis += 1
         }
-        grads.append(gradA)
+        grads[0] = gradA
         // Gradient for input_nodes[1] AKA b
         var gradB = dOut!
         axis = 0
@@ -351,7 +355,7 @@ class SMLAdd: SMLBinary {
             if dim == 1 { gradB = gradB.sum(axis: axis, keepDim: true) }
             axis += 1
         }
-        grads.append(gradB)
+        grads[1] = gradB
     }
 }
 
@@ -375,7 +379,7 @@ class SMLMul: SMLBinary {
             if dim == 1 { gradA = gradA.sum(axis: axis, keepDim: true) }
             axis += 1
         }
-        grads.append(gradA)
+        grads[0] = gradA
         // Gradient for input_nodes[1] AKA b
         var gradB = dOut! * a
         axis = 0
@@ -385,7 +389,7 @@ class SMLMul: SMLBinary {
             if dim == 1 { gradB = gradB.sum(axis: axis, keepDim: true) }
             axis += 1
         }
-        grads.append(gradB)
+        grads[1] = gradB
     }
 }
 
@@ -402,10 +406,10 @@ class SMLMatMul: SMLBinary {
         let b = inputs[1].out!
         // Gradient for input_nodes[0] aka a
         let gradA = b.transpose()
-        grads.append(dOut! <*> gradA)
+        grads[0] = dOut! <*> gradA
         // Gradient for input_nodes[1] aka b
         let gradB = a.transpose()
-        grads.append(gradB <*> dOut!)
+        grads[1] = gradB <*> dOut!
     }
 }
 
@@ -421,7 +425,7 @@ class SMLInv: SMLUnary {
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
         let gradA = -1.0 / a.pow(2.0)
-        grads.append(dOut! * gradA)
+        grads[0] = dOut! * gradA
     }
 }
 
@@ -435,7 +439,7 @@ class SMLNeg: SMLUnary {
     override func backward(dOut: Tensor?) {
         // Gradient for input_nodes[0] AKA a
         let gradA = -1.0
-        grads.append(dOut! * gradA)
+        grads[0] = dOut! * gradA
     }
 }
 
@@ -451,7 +455,7 @@ class SMLSin: SMLUnary {
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
         let gradA = a.cos()
-        grads.append(dOut! * gradA)
+        grads[0] = dOut! * gradA
     }
 }
 
@@ -465,7 +469,7 @@ class SMLExp: SMLUnary {
     override func backward(dOut: Tensor?) {
         // Gradient for input_nodes[0] AKA a
         let gradA = out!
-        grads.append(dOut! * gradA)
+        grads[0] = dOut! * gradA
     }
 }
 
@@ -481,7 +485,7 @@ class SMLLog: SMLUnary {
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
         let gradA = 1.0 / a
-        grads.append(dOut! * gradA)
+        grads[0] = dOut! * gradA
     }
 }
 
@@ -497,7 +501,7 @@ class SMLSquare: SMLUnary {
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
         let gradA = 2.0 * a
-        grads.append(dOut! * gradA)
+        grads[0] = dOut! * gradA
     }
 }
 
@@ -515,7 +519,7 @@ class SMLPow: SMLUnary {
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
         let gradA = p! * a.pow(p! - 1)
-        grads.append(dOut! * gradA)
+        grads[0] = dOut! * gradA
     }
 }
 
@@ -532,7 +536,7 @@ class SMLSum: SMLUnary {
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
         let gradA = Tensor(shape: a.shape, repeating: dOut!.grid.first!)
-        grads.append(gradA)
+        grads[0] = gradA
     }
 }
 
