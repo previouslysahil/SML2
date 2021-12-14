@@ -10,30 +10,32 @@ import SwiftUI
 
 // Need to make a new class that can handle matrix + matrix, scalar + matrix, scalar + scalar, [matrix] + [matrix], [matrix] + scalar, [matrix] + matrix
 
-// MARK: SMLGraph
-class SMLGraph {
+// MARK: CGraph
+class CGraph {
     
     // Nodes sorted in high to low dependencies order
     // (root is first element AKA most dependent)
-    var nodes: [SMLUnit] = []
+    var nodes: [Variable] = []
     // FOR PARALLEL
     // Keys for each depth, less dependencies as depth increases
     // (root is at first depth AKA most dependent)
     // This could potentially be optimized to use pointers? instead of actual object ref
-    var nodes_parallel: [Int: [(node: SMLUnit, parent: SMLUnit?, gradIdx: Int)]] = [:]
+    var nodes_parallel: [Int: [(node: Variable, parent: Variable?, gradIdx: Int)]] = [:]
     // Parallel toggle
     var parallel: Bool = false
     // Seed
     var seed: Tensor?
+    // Placeholders
+    var placeholders: Set<Variable> = Set<Variable>()
     
     // MARK: Init
-    init(_ root: SMLUnit, seed: Tensor, parallel: Bool = false) {
-        set(root, seed: seed, parallel: parallel)
+    init(_ root: Variable, seed: Tensor, parallel: Bool = false) {
+        build(root, seed: seed, parallel: parallel)
     }
     
     init() {}
     
-    func set(_ root: SMLUnit, seed: Tensor, parallel: Bool = false) {
+    func build(_ root: Variable, seed: Tensor, parallel: Bool = false) {
         self.parallel = parallel
         self.seed = seed
         // Sort graph based on paralleization
@@ -44,11 +46,18 @@ class SMLGraph {
         }
     }
     
+    func pass(_ data: [Variable: Tensor]) {
+        for placeholder in placeholders {
+            // Set this placeholders value (now basically just a variable)
+            placeholder.out = data[placeholder]
+        }
+    }
+    
     // MARK: Topology Sort (BFS)
     // DOES NOT CHECK FOR CYCLES
-    private func topology_sort(_ root: SMLUnit) {
+    private func topology_sort(_ root: Variable) {
         // Make empty queue
-        var queue = [SMLUnit]()
+        var queue = [Variable]()
         // Add root to our queue
         queue.append(root)
         // Dequeue until no more children
@@ -57,6 +66,10 @@ class SMLGraph {
             let curr = queue.removeFirst()
             // Add to our nodes
             nodes.append(curr)
+            // If placeholder add to placeholders
+            if curr.type == .placeholder {
+                placeholders.insert(curr)
+            }
             // Queue curr's children
             for child in curr.inputs {
                 queue.append(child)
@@ -66,9 +79,9 @@ class SMLGraph {
     
     // MARK: Topology Sort (BFS) PARALLEL
     // DOES NOT CHECK FOR CYCLES
-    private func topology_sort_parallel(_ root: SMLUnit) {
+    private func topology_sort_parallel(_ root: Variable) {
         // Make empty queue
-        var queue = [(node: SMLUnit, depth: Int, parent: SMLUnit?, gradIdx: Int)]()
+        var queue = [(node: Variable, depth: Int, parent: Variable?, gradIdx: Int)]()
         // Add root to our queue
         queue.append((root, 1, nil, -1))
         // Dequeue until no more children
@@ -82,6 +95,10 @@ class SMLGraph {
             } else {
                 // ith node so append to existing array
                 nodes_parallel[curr.depth]!.append((curr.node, curr.parent, curr.gradIdx))
+            }
+            // If placeholder add to placeholders
+            if curr.node.type == .placeholder {
+                placeholders.insert(curr.node)
             }
             // Queue curr's children
             var i = 0
@@ -106,7 +123,7 @@ class SMLGraph {
     // MARK: Forward
     private func forward() -> Tensor {
         // Set tracking if we already forwarded one of the nodes
-        var forwarded = Set<SMLUnit>()
+        var forwarded = Set<Variable>()
         // Go through all nodes starting at lowest dependecy and forward
         for node in nodes.reversed() {
             // check since the same node dependency may have been duplicated
@@ -121,12 +138,12 @@ class SMLGraph {
     // MARK: Forward PARALLEL
     private func forward_parallel() -> Tensor {
         // Set tracking if we already forwarded one of the nodes
-        var forwarded = Set<SMLUnit>()
+        var forwarded = Set<Variable>()
         // Go through all nodes starting at lowest dependecy and forward
         // This sorted keys could be optimized since it is used in forward_parallel and backward_bfs_parallel
         for depth in nodes_parallel.keys.sorted().reversed() {
             // Make our queue for nodes to be forwarded
-            var queue = [SMLUnit]()
+            var queue = [Variable]()
             // Queue nodes that should be forwarded
             for (node, _, _) in nodes_parallel[depth]! {
                 // check since the same node dependency may have been forwarded at a lower depth
@@ -148,7 +165,7 @@ class SMLGraph {
     
     // MARK: Backward Exposed
     @discardableResult
-    func bwd() -> [SMLUnit: Tensor] {
+    func bwd() -> [Variable: Tensor] {
         // Run bwd based on paralleization
         if parallel {
             return backward_parallel(seed: seed!)
@@ -158,9 +175,9 @@ class SMLGraph {
     }
     
     // MARK: Backward
-    private func backward(seed: Tensor) -> [SMLUnit: Tensor] {
+    private func backward(seed: Tensor) -> [Variable: Tensor] {
         // Make set to contain visited
-        var grads = [SMLUnit: Tensor]()
+        var grads = [Variable: Tensor]()
         // BFS from root and propagate gradient backwards
         backward_bfs(seed: seed, grads: &grads)
         return grads
@@ -168,9 +185,9 @@ class SMLGraph {
     
     // MARK: Backward BFS
     // DOES NOT CHECK FOR CYCLES
-    private func backward_bfs(seed: Tensor, grads: inout [SMLUnit: Tensor]) {
+    private func backward_bfs(seed: Tensor, grads: inout [Variable: Tensor]) {
         // Make empty queue
-        var queue = [(SMLUnit, Tensor)]()
+        var queue = [(Variable, Tensor)]()
         // Add our first node (root AKA most dependent) and the first gradient (usually 1) to queue
         queue.append((nodes.first!, seed))
         // BFS until queue is empty
@@ -196,9 +213,9 @@ class SMLGraph {
     }
     
     // MARK: Backward PARALLEL
-    private func backward_parallel(seed: Tensor) -> [SMLUnit: Tensor] {
+    private func backward_parallel(seed: Tensor) -> [Variable: Tensor] {
         // Make set to contain visited
-        var grads = [SMLUnit: Tensor]()
+        var grads = [Variable: Tensor]()
         // BFS from root and propagate gradient backwards
         backward_bfs_parallel(seed: seed, grads: &grads)
         return grads
@@ -206,7 +223,7 @@ class SMLGraph {
     
     // MARK: Backward BFS PARALLEL
     // DOES NOT CHECK FOR CYCLES
-    private func backward_bfs_parallel(seed: Tensor, grads: inout [SMLUnit: Tensor]) {
+    private func backward_bfs_parallel(seed: Tensor, grads: inout [Variable: Tensor]) {
         // Iterate from our lowest depth (lowest dependency)
         // This sorted keys could be optimized since it is used in forward_parallel and backward_bfs_parallel
         for depth in nodes_parallel.keys.sorted() {
@@ -220,7 +237,7 @@ class SMLGraph {
                 grads[root] = seed
             } else {
                 // Make our queues
-                var queues = [[(node: SMLUnit, dOut: Tensor)]]()
+                var queues = [[(node: Variable, dOut: Tensor)]]()
                 // For each node at each depth calculate it's chain ruled gradient
                 for (node, parent, idx) in nodes_parallel[depth]! {
                     // Find this nodes dOut through it parents gradients
@@ -268,65 +285,87 @@ class SMLGraph {
     }
 }
 
-// MARK: SMLUnit
-class SMLUnit: Hashable {
+// MARK: CGraphTypes
+enum CGGraphTypes: String {
+    case variable = "variable"
+    case placeholder = "placeholder"
+    case operation = "operation"
+}
+
+// MARK: Variable
+class Variable: Hashable {
     
     // Hashable conformance
-    static func == (lhs: SMLUnit, rhs: SMLUnit) -> Bool {
+    static func == (lhs: Variable, rhs: Variable) -> Bool {
         return ObjectIdentifier(lhs) == ObjectIdentifier(rhs)
     }
     
     func hash(into hasher: inout Hasher) { return hasher.combine(ObjectIdentifier(self)) }
     
-    var inputs: [SMLUnit]
+    var inputs: [Variable]
     var out: Tensor?
     // This will contain the chain ruled gradients for the inputs to the unit
     var grads: [Tensor]
     var tag: String
     
-    init(_ out: Tensor? = nil, inputs: [SMLUnit] = [], tag: String = "") {
+    var type: CGGraphTypes
+    
+    init(_ out: Tensor? = nil, inputs: [Variable] = [], tag: String = "") {
         self.inputs = inputs
         self.out = out
         self.grads = []
         self.tag = tag
+        self.type = .variable
     }
     
-    init(_ out: Double, inputs: [SMLUnit] = [], tag: String = "") {
+    init(_ out: Double, inputs: [Variable] = [], tag: String = "") {
         self.inputs = inputs
         self.out = Tensor(out)
         self.grads = []
         self.tag = tag
+        self.type = .variable
     }
     
     func forward() { }
     // dOut is the gradient for this node wrt to the root of the graph
     func backward(dOut: Tensor?) {}
-    func add(to graph: SMLGraph) -> Self {
+    func add(to graph: CGraph) -> Self {
         graph.nodes.append(self)
         return self
     }
 }
 
-// MARK: SMLBinary
-class SMLBinary: SMLUnit {
+// MARK: Placeholder
+class Placeholder: Variable {
     
-    init(_ a: SMLUnit, _ b: SMLUnit, tag: String = "") {
+    init() {
+        super.init()
+        self.type = .placeholder
+    }
+}
+
+// MARK: BinaryOp
+class BinaryOp: Variable {
+    
+    init(_ a: Variable, _ b: Variable, tag: String = "") {
         super.init(inputs: [a, b], tag: tag)
         grads = Array(repeating: Tensor(shape: [], grid: []), count: 2)
+        self.type = .operation
     }
 }
 
-// MARK: SMLUnary
-class SMLUnary: SMLUnit {
+// MARK: UnaryOp
+class UnaryOp: Variable {
     
-    init(_ a: SMLUnit, tag: String = "") {
+    init(_ a: Variable, tag: String = "") {
         super.init(inputs: [a], tag: tag)
         grads = Array(repeating: Tensor(shape: [], grid: []), count: 1)
+        self.type = .operation
     }
 }
 
-// MARK: SMLAdd
-class SMLAdd: SMLBinary {
+// MARK: Add
+class Add: BinaryOp {
     
     override func forward() {
         out = inputs[0].out! + inputs[1].out!
@@ -359,8 +398,8 @@ class SMLAdd: SMLBinary {
     }
 }
 
-// MARK: SMLMul
-class SMLMul: SMLBinary {
+// MARK: Mul
+class Mul: BinaryOp {
     
     override func forward() {
         out = inputs[0].out! * inputs[1].out!
@@ -393,8 +432,8 @@ class SMLMul: SMLBinary {
     }
 }
 
-// MARK: SMLMatMul
-class SMLMatMul: SMLBinary {
+// MARK: MatMul
+class MatMul: BinaryOp {
     
     override func forward() {
         out = inputs[0].out! <*> inputs[1].out!
@@ -413,8 +452,8 @@ class SMLMatMul: SMLBinary {
     }
 }
 
-// MARK: SMLInv
-class SMLInv: SMLUnary {
+// MARK: Inv
+class Inv: UnaryOp {
     
     override func forward() {
         out = 1.0 / inputs[0].out!
@@ -429,8 +468,8 @@ class SMLInv: SMLUnary {
     }
 }
 
-// MARK: SMLNeg
-class SMLNeg: SMLUnary {
+// MARK: Negate
+class Negate: UnaryOp {
     
     override func forward() {
         out = -inputs[0].out!
@@ -443,8 +482,8 @@ class SMLNeg: SMLUnary {
     }
 }
 
-// MARK: SMLSin
-class SMLSin: SMLUnary {
+// MARK: Sin
+class Sin: UnaryOp {
     
     override func forward() {
         out = inputs[0].out!.sin()
@@ -459,8 +498,8 @@ class SMLSin: SMLUnary {
     }
 }
 
-// MARK: SMLExp
-class SMLExp: SMLUnary {
+// MARK: Exp
+class Exp: UnaryOp {
     
     override func forward() {
         out = inputs[0].out!.exp()
@@ -473,8 +512,8 @@ class SMLExp: SMLUnary {
     }
 }
 
-// MARK: SMLLog
-class SMLLog: SMLUnary {
+// MARK: Log
+class Log: UnaryOp {
     
     override func forward() {
         out = (inputs[0].out! + 0.00000001).log()
@@ -489,8 +528,8 @@ class SMLLog: SMLUnary {
     }
 }
 
-// MARK: SMLSquare
-class SMLSquare: SMLUnary {
+// MARK: Square
+class Square: UnaryOp {
     
     override func forward() {
         out = inputs[0].out!.pow(2)
@@ -505,8 +544,8 @@ class SMLSquare: SMLUnary {
     }
 }
 
-// MARK: SMLPow
-class SMLPow: SMLUnary {
+// MARK: Pow
+class Pow: UnaryOp {
     
     var p: Double?
     
@@ -523,8 +562,8 @@ class SMLPow: SMLUnary {
     }
 }
 
-// MARK: SMLSum
-class SMLSum: SMLUnary {
+// MARK: Sum
+class Sum: UnaryOp {
     
     override func forward() {
         out = Tensor(inputs[0].out!.sum())
@@ -540,54 +579,54 @@ class SMLSum: SMLUnary {
     }
 }
 
-// MARK: SML Convience Notation
-func + (lhs: SMLUnit, rhs: SMLUnit) -> SMLAdd {
-    return SMLAdd(lhs, rhs)
+// MARK: Op Convience Notation
+func + (lhs: Variable, rhs: Variable) -> Add {
+    return Add(lhs, rhs)
 }
 
-func * (lhs: SMLUnit, rhs: SMLUnit) -> SMLMul {
-    return SMLMul(lhs, rhs)
+func * (lhs: Variable, rhs: Variable) -> Mul {
+    return Mul(lhs, rhs)
 }
 
-func / (lhs: SMLUnit, rhs: SMLUnit) -> SMLMul {
-    return SMLMul(lhs, SMLInv(rhs))
+func / (lhs: Variable, rhs: Variable) -> Mul {
+    return Mul(lhs, Inv(rhs))
 }
 
-func - (lhs: SMLUnit, rhs: SMLUnit) -> SMLAdd {
-    return SMLAdd(lhs, SMLNeg(rhs))
+func - (lhs: Variable, rhs: Variable) -> Add {
+    return Add(lhs, Negate(rhs))
 }
 
-func <*> (lhs: SMLUnit, rhs: SMLUnit) -> SMLMatMul {
-    return SMLMatMul(lhs, rhs)
+func <*> (lhs: Variable, rhs: Variable) -> MatMul {
+    return MatMul(lhs, rhs)
 }
 
-extension SMLUnit {
-    func smlsin() -> SMLSin {
-        return SMLSin(self)
+extension Variable {
+    func sin() -> Sin {
+        return Sin(self)
     }
-    func smlexp() -> SMLExp {
-        return SMLExp(self)
+    func exp() -> Exp {
+        return Exp(self)
     }
-    func smllog() -> SMLLog {
-        return SMLLog(self)
+    func log() -> Log {
+        return Log(self)
     }
-    func smlsum() -> SMLSum {
-        return SMLSum(self)
+    func sum() -> Sum {
+        return Sum(self)
     }
-    func smlsquare() -> SMLSquare {
-        return SMLSquare(self)
+    func square() -> Square {
+        return Square(self)
     }
-    func smlpow(_ a: Double) -> SMLPow {
-        let unit = SMLPow(self)
+    func pow(_ a: Double) -> Pow {
+        let unit = Pow(self)
         unit.p = a
         return unit
     }
 }
 
-// MARK: SMLSession
+// MARK: Session
 class Session {
     
-    var graph: SMLGraph = SMLGraph()
+    var graph: CGraph = CGraph()
     var parallel: Bool = false
     
     init(parallel: Bool = false) {
@@ -595,10 +634,132 @@ class Session {
     }
     
     // seed == scalar basically means we are assuming we are ADing a function that outputs a scalar (all cost functions should do this)
-    func run(_ root: SMLUnit, seed: Tensor = Tensor(1)) -> (out: Tensor, grads: [SMLUnit: Tensor]) {
-        graph.set(root, seed: seed, parallel: parallel)
+    func build(_ root: Variable, seed: Tensor = Tensor(1)) {
+        // Builds the graph (currently just topolgical sort, maybe offset some other work here?)
+        graph.build(root, seed: seed, parallel: parallel)
+    }
+    
+    func pass(_ data: [Variable: Tensor]) {
+        // Populates our placeholders
+        graph.pass(data)
+    }
+    
+    func run(_ root: Variable, seed: Tensor = Tensor(1)) -> (out: Tensor, grads: [Variable: Tensor]) {
+        // Forward to get our answer
         let out = graph.fwd()
+        // Backward to get our gradients/ derivatives
         let grads = graph.bwd()
         return (out, grads)
+    }
+    
+    func descend(grads: [Variable: Tensor], optim: Optimizer, lr: Double) {
+        // Two empty soon to be perfect arrays
+        var params = [Variable]()
+        var optim_grads = [Tensor]()
+        // Store the computed gradients for our parameters
+        for (node, grad) in grads {
+            if node.type == .variable {
+                params.append(node)
+                optim_grads.append(grad)
+            }
+            print(node.type.rawValue)
+        }
+        // Use chosen optimizer to find out optimized gradients
+        optim_grads.withUnsafeBufferPointer { param_gradsPtr in
+            optim_grads = optim.gradients(grads_ptr: param_gradsPtr)
+        }
+        // Now take our gradient step for our params
+        for i in 0..<params.count {
+            params[i].out! = params[i].out! - lr * optim_grads[i]
+        }
+    }
+}
+
+// MARK: Optimizer
+protocol Optimizer {
+    
+    func gradients(grads_ptr: UnsafeBufferPointer<Tensor>) -> [Tensor]
+}
+
+// MARK: ADAM
+class Adam: Optimizer {
+    
+    private var m = [Tensor]()
+    private var v = [Tensor]()
+    
+    private var b1: Double
+    private var b2: Double
+    private var t: Int
+    
+    init(b1: Double, b2: Double) {
+        self.b1 = b1
+        self.b2 = b2
+        self.t = 0
+    }
+    
+    func inc() {
+        // Add to t on each epoch
+        t += 1
+    }
+    
+    func gradients(grads_ptr: UnsafeBufferPointer<Tensor>) -> [Tensor] {
+        // Get our mean moments for our grads
+        m = mean(derivatives: grads_ptr, m: m, b1: b1)
+        // Get our variance moments for our grads
+        v = variance(derivatives: grads_ptr, v: v, b2: b2)
+        
+        // Make our gradients for our weights and biases from our mean and variance moments
+        let grads = grads(m: m, v: v, t: t)
+        return grads
+    }
+    
+    private func grads(m: [Tensor], v: [Tensor], t: Int) -> [Tensor] {
+        return zip(m, v).map { m_l, v_l in
+            // Get corrected m and v
+            let mc_l: Tensor = m_l / (1 - pow(0.9, Double(t)))
+            let vc_l: Tensor = v_l / (1 - pow(0.999, Double(t)))
+            // Define our gradient
+            return mc_l / (vc_l.sqrt() + 0.00000001)
+        }
+    }
+    
+    private func mean(derivatives: UnsafeBufferPointer<Tensor>, m: [Tensor], b1: Double) -> [Tensor] {
+        // First set up empty gradient array to store each layers gradient matrix
+        var firstMoments = [Tensor]()
+        // On nth iteration get the gradient with momentum for each layer and add it to our gradient matrix
+        for l in 0..<derivatives.count {
+            let firstMoment: Tensor
+            if m.isEmpty {
+                // Make our gradient for this layer which is just our derivative * lr this time
+                firstMoment = (1 - b1) * derivatives[l]
+            } else {
+                // Make our gradient for this layer using our last gradient and the derivative * lr
+                firstMoment = b1 * m[l] + (1 - b1) * derivatives[l]
+            }
+            // Add this layers gradient to the gradient array
+            firstMoments.append(firstMoment)
+        }
+        // At this point gradient[l] is a matrix of the rolling averages of the previous derivatives and this iterations derivative so add it to our gradients to be used for our next gradient calculation
+        return firstMoments
+    }
+    
+    private func variance(derivatives: UnsafeBufferPointer<Tensor>, v: [Tensor], b2: Double) -> [Tensor] {
+        // First set up empty gradient array to store each layers gradient matrix
+        var secondMoments = [Tensor]()
+        // On nth iteration get the gradient with momentum for each layer and add it to our gradient matrix
+        for l in 0..<derivatives.count {
+            let secondMoment: Tensor
+            if v.isEmpty {
+                // Make our gradient for this layer which is just our derivative * lr this time
+                secondMoment = (1 - b2) * derivatives[l].pow(2)
+            } else {
+                // Make our gradient for this layer using our last gradient and the derivative * lr
+                secondMoment = b2 * v[l] + (1 - b2) * derivatives[l].pow(2)
+            }
+            // Add this layers gradient to the gradient array
+            secondMoments.append(secondMoment)
+        }
+        // At this point gradient[l] is a matrix of the rolling averages of the previous derivatives and this iterations derivative so add it to our gradients to be used for our next gradient calculation
+        return secondMoments
     }
 }

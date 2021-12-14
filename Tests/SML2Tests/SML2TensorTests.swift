@@ -309,10 +309,6 @@ final class SML2TensorTests: XCTestCase {
         
         XCTAssert(tensor1.sum(axis: 1, keepDim: true) == Tensor([[10], [4]]), "sum axis 0")
         XCTAssert(tensor1.sum(axis: 1) == Tensor(shape: [2], grid: [10, 4]), "sum axis 0")
-        
-//        tensor1 = Tensor([[[1, 2, 3, 4], [1, 1, 1, 1]], [[1, 2, 3, 4], [1, 1, 1, 1]]])
-//        print(tensor1.sum(axis: 2))
-//        XCTAssert(tensor1.sum(axis: 0) == Tensor([[2, 4, 6, 8], [2, 2, 2, 2]]), "sum axis 0 AKA sumRows")
     }
     
     func testTranspose() throws {

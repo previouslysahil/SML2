@@ -632,14 +632,22 @@ extension Tensor {
             // ND how tf?
             fatalError("ND sum along axis not implemented yet")
 //            var newShape = shape
-//            let offset = axis == shape.count - 1 ? -1 : 1
-//            if keepDim { newShape[axis + offset] = 1 } else { newShape.remove(at: axis + offset) }
+//            if keepDim { newShape[axis] = 1 } else { newShape.remove(at: axis) }
+//            if (axis == 0 && shape[axis] == 1) || (axis == 1 && shape[axis] == 1) { return Tensor(shape: newShape, grid: grid) }
 //            var t = Tensor(shape: newShape, repeating: 0)
 //            grid.withUnsafeBufferPointer { gridPtr in
-//                t.grid.withUnsafeMutableBufferPointer { tPtr in
-//                    for a in 0..<newShape.reduce(1, { $0 * $1 }) {
-//                        vDSP_sveD(gridPtr.baseAddress! + a, newShape.reduce(1) { $0 * $1 }, tPtr.baseAddress! + a, vDSP_Length(newShape.reduce(1) { $0 * $1 }))
+//                if axis == 0 {
+//                    for a in 0..<shape[0] {
+//                        let tmp = t
+//                        let N = t.count
+//                        t.grid.withUnsafeMutableBufferPointer { tPtr in
+//                            tmp.grid.withUnsafeBufferPointer { tmpPtr in
+//                                vDSP_vaddD(gridPtr.baseAddress! + a * N, 1, tmpPtr.baseAddress!, 1, tPtr.baseAddress!, 1, vDSP_Length(N))
+//                            }
+//                        }
 //                    }
+//                } else if axis == 1 {
+//
 //                }
 //            }
 //            return t
