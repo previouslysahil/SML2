@@ -208,6 +208,27 @@ final class SML2TensorTests: XCTestCase {
         let arr_test41: [Double] = [6, 6, 6]
         XCTAssert((tensor1 + tensor2) == Tensor([[arr_test41, arr_test41], [arr_test41, arr_test41]]), "add a 3D-Tensor with a matrix")
         XCTAssert((tensor2 + tensor1) == Tensor([[arr_test41, arr_test41], [arr_test41, arr_test41]]), "add a matrix with a 3D-Tensor")
+        
+        // Extra shape tensors
+        tensor1 = Tensor(shape: [1, 1, 2], grid: [1, 2])
+        tensor2 = Tensor(shape: [1, 2], grid: [1, 2])
+        XCTAssert((tensor1 + tensor1) == Tensor(shape: [1, 1, 2], grid: [2, 4]), "add a extra shape row vector with itself")
+        XCTAssert((tensor1 + tensor2) == Tensor(shape: [1, 1, 2], grid: [2, 4]), "add a extra shape row vector with a row vector")
+
+        tensor1 = Tensor(shape: [1, 2, 1], grid: [1, 2])
+        tensor2 = Tensor(shape: [2, 1], grid: [1, 2])
+        XCTAssert((tensor1 + tensor1) == Tensor(shape: [1, 2, 1], grid: [2, 4]), "add a extra shape row vector with itself")
+        XCTAssert((tensor1 + tensor2) == Tensor(shape: [1, 2, 1], grid: [2, 4]), "add a extra shape row vector with a column vector")
+        
+        tensor1 = Tensor(shape: [1, 1, 2, 1], grid: [1, 2])
+        tensor2 = Tensor(shape: [1, 2, 1], grid: [1, 2])
+        XCTAssert((tensor1 + tensor1) == Tensor(shape: [1, 1, 2, 1], grid: [2, 4]), "add a extra shape row vector with itself")
+        XCTAssert((tensor1 + tensor2) == Tensor(shape: [1, 1, 2, 1], grid: [2, 4]), "add a extra shape row vector with a column vector")
+        
+        tensor1 = Tensor(shape: [1, 3, 2, 1], grid: [1, 2, 3, 4, 5, 6])
+        tensor2 = Tensor(shape: [3, 2, 1], grid: [1, 2, 3, 4, 5, 6])
+        XCTAssert((tensor1 + tensor1) == Tensor(shape: [1, 3, 2, 1], grid: [2, 4, 6, 8, 10, 12]), "add a extra shape 3D tensor with itself")
+        XCTAssert((tensor1 + tensor2) == Tensor(shape: [1, 3, 2, 1], grid: [2, 4, 6, 8, 10, 12]), "add a extra shape 3D tensor with a 3D tensor")
     }
     
     func testSub() throws {
@@ -300,6 +321,38 @@ final class SML2TensorTests: XCTestCase {
         XCTAssert((tensor2 <*> tensor1) == Tensor(ans4), "mat mul 1x4 with 4x1")
     }
     
+    func testSumDiag() throws {
+        var tensor1: Tensor
+        
+        let grid1: [[Double]] = [
+            [1, 2, 3, 4],
+            [2, 4, 6, 8],
+            [3, 6, 9, 12],
+            [4, 8, 12, 16]
+        ]
+        tensor1 = Tensor(grid1)
+        XCTAssert(tensor1.sumDiag() == 30, "sum mat diag")
+        XCTAssert(tensor1.diag() == Tensor(shape: tensor1.shape, grid: [1, 0, 0, 0, 0, 4, 0, 0, 0, 0, 9, 0, 0, 0, 0, 16]))
+        let grid2: [[Double]] = [
+            [1, 2, 3, 4],
+            [2, 4, 6, 8],
+            [3, 6, 9, 12],
+            [4, 8, 12, 16],
+            [5, 10, 15, 20]
+        ]
+        tensor1 = Tensor(grid2)
+        XCTAssert(tensor1.sumDiag() == 30, "sum mat diag")
+        XCTAssert(tensor1.diag() == Tensor(shape: tensor1.shape, grid: [1, 0, 0, 0, 0, 4, 0, 0, 0, 0, 9, 0, 0, 0, 0, 16, 0, 0, 0, 0]))
+        let grid3: [[Double]] = [
+            [1, 2, 3, 4],
+            [2, 4, 6, 8],
+            [3, 6, 9, 12]
+        ]
+        tensor1 = Tensor(grid3)
+        XCTAssert(tensor1.sumDiag() == 14, "sum mat diag")
+        XCTAssert(tensor1.diag() == Tensor(shape: tensor1.shape, grid: [1.0, 0.0, 0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.0, 0.0, 9.0, 0.0]))
+    }
+    
     func testSumAxis() throws {
         var tensor1: Tensor
         
@@ -319,5 +372,51 @@ final class SML2TensorTests: XCTestCase {
         
         tensor1 = Tensor([[1, 2, 3, 4]])
         XCTAssert(tensor1.transpose() == Tensor([[1], [2], [3], [4]]), "transpose matrix")
+    }
+    
+    func testType() throws {
+        var tensor1: Tensor
+        
+        tensor1 = Tensor(1)
+        XCTAssert(tensor1.type == .scalar)
+        
+        tensor1 = Tensor(shape: [1, 1, 1, 1], grid: [1])
+        XCTAssert(tensor1.type == .scalar)
+        
+        tensor1 = Tensor([1, 2, 3, 4])
+        XCTAssert(tensor1.type == .row)
+        
+        tensor1 = Tensor(shape: [1, 1, 1, 4], grid: [1, 2, 3, 4])
+        XCTAssert(tensor1.type == .row)
+        
+        tensor1 = Tensor([1, 2, 3, 4], type: .column)
+        XCTAssert(tensor1.type == .column)
+        
+        tensor1 = Tensor(shape: [1, 1, 4, 1], grid: [1, 2, 3, 4])
+        XCTAssert(tensor1.type == .column)
+        
+        tensor1 = Tensor([1, 2, 3, 4], type: .row)
+        XCTAssert(tensor1.type == .row)
+        
+        tensor1 = Tensor(shape: [1, 1, 1, 4], grid: [1, 2, 3, 4])
+        XCTAssert(tensor1.type == .row)
+        
+        tensor1 = Tensor([[1, 2, 3, 4], [1, 2, 3, 4]])
+        XCTAssert(tensor1.type == .matrix)
+        
+        tensor1 = Tensor(shape: [1, 1, 2, 4], grid: [1, 2, 3, 4, 1, 2, 3, 4])
+        XCTAssert(tensor1.type == .matrix)
+        
+        tensor1 = Tensor([[[1, 2, 3, 4], [1, 2, 3, 4]], [[1, 2, 3, 4], [1, 2, 3, 4]]])
+        XCTAssert(tensor1.type == .tensor3D)
+        
+        tensor1 = Tensor(shape: [1, 1, 1, 2, 2, 4], grid: [1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4])
+        XCTAssert(tensor1.type == .tensor3D)
+        
+        tensor1 = Tensor(shape: [1, 1, 2, 2, 2, 4], grid: [1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4])
+        XCTAssert(tensor1.type == .tensorND)
+        
+        tensor1 = Tensor(shape: [1, 1, 2, 2, 1, 4], grid: [1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4])
+        XCTAssert(tensor1.type == .tensorND)
     }
 }

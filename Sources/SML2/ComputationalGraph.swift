@@ -11,31 +11,29 @@ import SwiftUI
 // Need to make a new class that can handle matrix + matrix, scalar + matrix, scalar + scalar, [matrix] + [matrix], [matrix] + scalar, [matrix] + matrix
 
 // MARK: CGraph
-class CGraph {
+public final class CGraph {
     
     // Nodes sorted in high to low dependencies order
     // (root is first element AKA most dependent)
-    var nodes: [Variable] = []
+    private var nodes: [Variable] = []
     // FOR PARALLEL
     // Keys for each depth, less dependencies as depth increases
     // (root is at first depth AKA most dependent)
     // This could potentially be optimized to use pointers? instead of actual object ref
-    var nodes_parallel: [Int: [(node: Variable, parent: Variable?, gradIdx: Int)]] = [:]
+    private var nodes_parallel: [Int: [(node: Variable, parent: Variable?, gradIdx: Int)]] = [:]
     // Parallel toggle
-    var parallel: Bool = false
+    private var parallel: Bool = false
     // Seed
-    var seed: Tensor?
-    // Placeholders
-    var placeholders: Set<Variable> = Set<Variable>()
+    private var seed: Tensor?
     
     // MARK: Init
-    init(_ root: Variable, seed: Tensor, parallel: Bool = false) {
+    public init(_ root: Variable, seed: Tensor, parallel: Bool = false) {
         build(root, seed: seed, parallel: parallel)
     }
     
-    init() {}
+    public init() {}
     
-    func build(_ root: Variable, seed: Tensor, parallel: Bool = false) {
+    public func build(_ root: Variable, seed: Tensor, parallel: Bool = false) {
         self.parallel = parallel
         self.seed = seed
         // Sort graph based on paralleization
@@ -46,10 +44,12 @@ class CGraph {
         }
     }
     
-    func pass(_ data: [Variable: Tensor]) {
-        for placeholder in placeholders {
-            // Set this placeholders value (now basically just a variable)
-            placeholder.out = data[placeholder]
+    public func pass(_ data: [Variable: Tensor]) {
+        for (node, out) in data {
+            // Set the corresponding placeholder for our key's value (now treated like a variable)
+            if node.type == .placeholder {
+                node.out = out
+            }
         }
     }
     
@@ -66,10 +66,6 @@ class CGraph {
             let curr = queue.removeFirst()
             // Add to our nodes
             nodes.append(curr)
-            // If placeholder add to placeholders
-            if curr.type == .placeholder {
-                placeholders.insert(curr)
-            }
             // Queue curr's children
             for child in curr.inputs {
                 queue.append(child)
@@ -96,10 +92,6 @@ class CGraph {
                 // ith node so append to existing array
                 nodes_parallel[curr.depth]!.append((curr.node, curr.parent, curr.gradIdx))
             }
-            // If placeholder add to placeholders
-            if curr.node.type == .placeholder {
-                placeholders.insert(curr.node)
-            }
             // Queue curr's children
             var i = 0
             for child in curr.node.inputs {
@@ -111,17 +103,18 @@ class CGraph {
     
     // MARK: Forward Exposed
     @discardableResult
-    func fwd() -> Tensor {
+    public func fwd(till: Variable? = nil) -> Tensor {
         // Run fwd based on paralleization
         if parallel {
-            return forward_parallel()
+            // till not implemented yet
+            return forward_parallel(till: till)
         } else {
-            return forward()
+            return forward(till: till)
         }
     }
     
     // MARK: Forward
-    private func forward() -> Tensor {
+    private func forward(till: Variable? = nil) -> Tensor {
         // Set tracking if we already forwarded one of the nodes
         var forwarded = Set<Variable>()
         // Go through all nodes starting at lowest dependecy and forward
@@ -129,6 +122,7 @@ class CGraph {
             // check since the same node dependency may have been duplicated
             if !forwarded.contains(node) {
                 node.forward()
+                if let till = till, node == till { return node.out! }
                 forwarded.insert(node)
             }
         }
@@ -136,7 +130,7 @@ class CGraph {
     }
     
     // MARK: Forward PARALLEL
-    private func forward_parallel() -> Tensor {
+    private func forward_parallel(till: Variable? = nil) -> Tensor {
         // Set tracking if we already forwarded one of the nodes
         var forwarded = Set<Variable>()
         // Go through all nodes starting at lowest dependecy and forward
@@ -154,10 +148,13 @@ class CGraph {
                     forwarded.insert(node)
                 }
             }
+            var until: Int? = nil
             // Concurrently forwarded our queued nodes
             DispatchQueue.concurrentPerform(iterations: queue.count) { i in
                 queue[i].forward()
+                if let till = till, queue[i] == till { until = i }
             }
+            if let until = until { return queue[until].out! }
         }
         // dict[1] should always be just our root node
         return nodes_parallel[1]!.first!.node.out!
@@ -165,7 +162,7 @@ class CGraph {
     
     // MARK: Backward Exposed
     @discardableResult
-    func bwd() -> [Variable: Tensor] {
+    public func bwd() -> [Variable: Tensor] {
         // Run bwd based on paralleization
         if parallel {
             return backward_parallel(seed: seed!)
@@ -286,31 +283,37 @@ class CGraph {
 }
 
 // MARK: CGraphTypes
-enum CGGraphTypes: String {
+public enum CGGraphTypes: String {
     case variable = "variable"
     case placeholder = "placeholder"
+    case constant = "constant"
     case operation = "operation"
 }
 
 // MARK: Variable
-class Variable: Hashable {
+public class Variable: Hashable, Comparable {
+    
+    // Comparable conformance
+    public static func < (lhs: Variable, rhs: Variable) -> Bool {
+        return ObjectIdentifier(lhs) < ObjectIdentifier(rhs)
+    }
     
     // Hashable conformance
-    static func == (lhs: Variable, rhs: Variable) -> Bool {
+    public static func == (lhs: Variable, rhs: Variable) -> Bool {
         return ObjectIdentifier(lhs) == ObjectIdentifier(rhs)
     }
     
-    func hash(into hasher: inout Hasher) { return hasher.combine(ObjectIdentifier(self)) }
+    public final func hash(into hasher: inout Hasher) { return hasher.combine(ObjectIdentifier(self)) }
     
-    var inputs: [Variable]
-    var out: Tensor?
+    public final var inputs: [Variable]
+    public final var out: Tensor?
     // This will contain the chain ruled gradients for the inputs to the unit
-    var grads: [Tensor]
-    var tag: String
+    public final var grads: [Tensor]
+    public final var tag: String
     
-    var type: CGGraphTypes
+    public final var type: CGGraphTypes
     
-    init(_ out: Tensor? = nil, inputs: [Variable] = [], tag: String = "") {
+    public init(_ out: Tensor? = nil, inputs: [Variable] = [], tag: String = "") {
         self.inputs = inputs
         self.out = out
         self.grads = []
@@ -318,7 +321,7 @@ class Variable: Hashable {
         self.type = .variable
     }
     
-    init(_ out: Double, inputs: [Variable] = [], tag: String = "") {
+    public init(_ out: Double, inputs: [Variable] = [], tag: String = "") {
         self.inputs = inputs
         self.out = Tensor(out)
         self.grads = []
@@ -326,28 +329,38 @@ class Variable: Hashable {
         self.type = .variable
     }
     
-    func forward() { }
+    public func forward() { }
     // dOut is the gradient for this node wrt to the root of the graph
-    func backward(dOut: Tensor?) {}
-    func add(to graph: CGraph) -> Self {
-        graph.nodes.append(self)
-        return self
-    }
+    public func backward(dOut: Tensor?) {}
 }
 
 // MARK: Placeholder
-class Placeholder: Variable {
+public final class Placeholder: Variable {
     
-    init() {
-        super.init()
+    public init(tag: String = "") {
+        super.init(tag: tag)
         self.type = .placeholder
     }
 }
 
-// MARK: BinaryOp
-class BinaryOp: Variable {
+// MARK: Constant
+public final class Constant: Variable {
     
-    init(_ a: Variable, _ b: Variable, tag: String = "") {
+    public init(_ out: Tensor, tag: String = "") {
+        super.init(out, tag: tag)
+        self.type = .constant
+    }
+    
+    public init(_ out: Double, tag: String = "") {
+        super.init(out, tag: tag)
+        self.type = .constant
+    }
+}
+
+// MARK: BinaryOp
+public class BinaryOp: Variable {
+    
+    public init(_ a: Variable, _ b: Variable, tag: String = "") {
         super.init(inputs: [a, b], tag: tag)
         grads = Array(repeating: Tensor(shape: [], grid: []), count: 2)
         self.type = .operation
@@ -355,9 +368,9 @@ class BinaryOp: Variable {
 }
 
 // MARK: UnaryOp
-class UnaryOp: Variable {
+public class UnaryOp: Variable {
     
-    init(_ a: Variable, tag: String = "") {
+    public init(_ a: Variable, tag: String = "") {
         super.init(inputs: [a], tag: tag)
         grads = Array(repeating: Tensor(shape: [], grid: []), count: 1)
         self.type = .operation
@@ -365,13 +378,13 @@ class UnaryOp: Variable {
 }
 
 // MARK: Add
-class Add: BinaryOp {
+public final class Add: BinaryOp {
     
-    override func forward() {
+    public override func forward() {
         out = inputs[0].out! + inputs[1].out!
     }
     
-    override func backward(dOut: Tensor?) {
+    public override func backward(dOut: Tensor?) {
         // Clarify a and b
         let a = inputs[0].out!
         let b = inputs[1].out!
@@ -399,13 +412,13 @@ class Add: BinaryOp {
 }
 
 // MARK: Mul
-class Mul: BinaryOp {
+public final class Mul: BinaryOp {
     
-    override func forward() {
+    public override func forward() {
         out = inputs[0].out! * inputs[1].out!
     }
     
-    override func backward(dOut: Tensor?) {
+    public override func backward(dOut: Tensor?) {
         // Clarify a and b
         let a = inputs[0].out!
         let b = inputs[1].out!
@@ -433,13 +446,13 @@ class Mul: BinaryOp {
 }
 
 // MARK: MatMul
-class MatMul: BinaryOp {
+public final class MatMul: BinaryOp {
     
-    override func forward() {
+    public override func forward() {
         out = inputs[0].out! <*> inputs[1].out!
     }
     
-    override func backward(dOut: Tensor?) {
+    public override func backward(dOut: Tensor?) {
         // Clarify a and b
         let a = inputs[0].out!
         let b = inputs[1].out!
@@ -452,14 +465,26 @@ class MatMul: BinaryOp {
     }
 }
 
-// MARK: Inv
-class Inv: UnaryOp {
+// MARK: MatTran (not tested but like.... c'mon)
+public final class MatTran: UnaryOp {
     
-    override func forward() {
+    public override func forward() {
+        out = inputs[0].out!.transpose()
+    }
+    
+    public override func backward(dOut: Tensor?) {
+        grads[0] = dOut!.transpose()
+    }
+}
+
+// MARK: Inv
+public final class Inv: UnaryOp {
+    
+    public override func forward() {
         out = 1.0 / inputs[0].out!
     }
     
-    override func backward(dOut: Tensor?) {
+    public override func backward(dOut: Tensor?) {
         // Clarify a
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
@@ -469,13 +494,13 @@ class Inv: UnaryOp {
 }
 
 // MARK: Negate
-class Negate: UnaryOp {
+public final class Negate: UnaryOp {
     
-    override func forward() {
+    public override func forward() {
         out = -inputs[0].out!
     }
     
-    override func backward(dOut: Tensor?) {
+    public override func backward(dOut: Tensor?) {
         // Gradient for input_nodes[0] AKA a
         let gradA = -1.0
         grads[0] = dOut! * gradA
@@ -483,13 +508,13 @@ class Negate: UnaryOp {
 }
 
 // MARK: Sin
-class Sin: UnaryOp {
+public final class Sin: UnaryOp {
     
-    override func forward() {
+    public override func forward() {
         out = inputs[0].out!.sin()
     }
     
-    override func backward(dOut: Tensor?) {
+    public override func backward(dOut: Tensor?) {
         // Clarify a
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
@@ -499,13 +524,13 @@ class Sin: UnaryOp {
 }
 
 // MARK: Exp
-class Exp: UnaryOp {
+public final class Exp: UnaryOp {
     
-    override func forward() {
+    public override func forward() {
         out = inputs[0].out!.exp()
     }
     
-    override func backward(dOut: Tensor?) {
+    public override func backward(dOut: Tensor?) {
         // Gradient for input_nodes[0] AKA a
         let gradA = out!
         grads[0] = dOut! * gradA
@@ -513,13 +538,13 @@ class Exp: UnaryOp {
 }
 
 // MARK: Log
-class Log: UnaryOp {
+public final class Log: UnaryOp {
     
-    override func forward() {
+    public override func forward() {
         out = (inputs[0].out! + 0.00000001).log()
     }
     
-    override func backward(dOut: Tensor?) {
+    public override func backward(dOut: Tensor?) {
         // Clarify a
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
@@ -529,13 +554,13 @@ class Log: UnaryOp {
 }
 
 // MARK: Square
-class Square: UnaryOp {
+public final class Square: UnaryOp {
     
-    override func forward() {
+    public override func forward() {
         out = inputs[0].out!.pow(2)
     }
     
-    override func backward(dOut: Tensor?) {
+    public override func backward(dOut: Tensor?) {
         // Clarify a
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
@@ -545,15 +570,15 @@ class Square: UnaryOp {
 }
 
 // MARK: Pow
-class Pow: UnaryOp {
+public final class Pow: UnaryOp {
     
     var p: Double?
     
-    override func forward() {
+    public override func forward() {
         out = inputs[0].out!.pow(p!)
     }
     
-    override func backward(dOut: Tensor?) {
+    public override func backward(dOut: Tensor?) {
         // Clarify a
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
@@ -563,13 +588,13 @@ class Pow: UnaryOp {
 }
 
 // MARK: Sum
-class Sum: UnaryOp {
+public final class Sum: UnaryOp {
     
-    override func forward() {
+    public override func forward() {
         out = Tensor(inputs[0].out!.sum())
     }
     
-    override func backward(dOut: Tensor?) {
+    public override func backward(dOut: Tensor?) {
         precondition(dOut!.shape.count == 0)
         // Clarify a
         let a = inputs[0].out!
@@ -579,44 +604,67 @@ class Sum: UnaryOp {
     }
 }
 
+// MARK: SumDiag
+public final class SumDiag: UnaryOp {
+    
+    public override func forward() {
+        out = Tensor(inputs[0].out!.sumDiag())
+    }
+    
+    public override func backward(dOut: Tensor?) {
+        precondition(dOut!.shape.count == 0)
+        // Clarify a
+        let a = inputs[0].out!
+        // Gradient for input_nodes[0] AKA a
+        let gradA = Tensor(shape: a.shape, repeating: dOut!.grid.first!).diag()
+        grads[0] = gradA
+    }
+}
+
 // MARK: Op Convience Notation
-func + (lhs: Variable, rhs: Variable) -> Add {
+public func + (lhs: Variable, rhs: Variable) -> Add {
     return Add(lhs, rhs)
 }
 
-func * (lhs: Variable, rhs: Variable) -> Mul {
+public func * (lhs: Variable, rhs: Variable) -> Mul {
     return Mul(lhs, rhs)
 }
 
-func / (lhs: Variable, rhs: Variable) -> Mul {
+public func / (lhs: Variable, rhs: Variable) -> Mul {
     return Mul(lhs, Inv(rhs))
 }
 
-func - (lhs: Variable, rhs: Variable) -> Add {
+public func - (lhs: Variable, rhs: Variable) -> Add {
     return Add(lhs, Negate(rhs))
 }
 
-func <*> (lhs: Variable, rhs: Variable) -> MatMul {
+public func <*> (lhs: Variable, rhs: Variable) -> MatMul {
     return MatMul(lhs, rhs)
 }
 
 extension Variable {
-    func sin() -> Sin {
+    public func transpose() -> MatTran {
+        return MatTran(self)
+    }
+    public func sin() -> Sin {
         return Sin(self)
     }
-    func exp() -> Exp {
+    public func exp() -> Exp {
         return Exp(self)
     }
-    func log() -> Log {
+    public func log() -> Log {
         return Log(self)
     }
-    func sum() -> Sum {
+    public func sum() -> Sum {
         return Sum(self)
     }
-    func square() -> Square {
+    public func sumDiag() -> SumDiag {
+        return SumDiag(self)
+    }
+    public func square() -> Square {
         return Square(self)
     }
-    func pow(_ a: Double) -> Pow {
+    public func pow(_ a: Double) -> Pow {
         let unit = Pow(self)
         unit.p = a
         return unit
@@ -624,27 +672,32 @@ extension Variable {
 }
 
 // MARK: Session
-class Session {
+public final class Session {
     
-    var graph: CGraph = CGraph()
-    var parallel: Bool = false
+    public var graph: CGraph = CGraph()
+    public var parallel: Bool = false
     
-    init(parallel: Bool = false) {
+    public init(parallel: Bool = false) {
         self.parallel = parallel
     }
     
     // seed == scalar basically means we are assuming we are ADing a function that outputs a scalar (all cost functions should do this)
-    func build(_ root: Variable, seed: Tensor = Tensor(1)) {
+    public func build(_ root: Variable, seed: Tensor = Tensor(1)) {
         // Builds the graph (currently just topolgical sort, maybe offset some other work here?)
         graph.build(root, seed: seed, parallel: parallel)
     }
     
-    func pass(_ data: [Variable: Tensor]) {
+    public func pass(_ data: [Variable: Tensor]) {
         // Populates our placeholders
         graph.pass(data)
     }
     
-    func run(_ root: Variable, seed: Tensor = Tensor(1)) -> (out: Tensor, grads: [Variable: Tensor]) {
+    public func run(_ root: Variable, till: Variable? = nil, seed: Tensor = Tensor(1)) -> (out: Tensor, grads: [Variable: Tensor]) {
+        if till != nil {
+            // Forward to get our answer
+            let out = graph.fwd(till: till)
+            return (out, [:])
+        }
         // Forward to get our answer
         let out = graph.fwd()
         // Backward to get our gradients/ derivatives
@@ -652,18 +705,28 @@ class Session {
         return (out, grads)
     }
     
-    func descend(grads: [Variable: Tensor], optim: Optimizer, lr: Double) {
+    public func descend(grads: [Variable: Tensor], optim: Optimizer, lr: Double) {
+        var types = [String: Int]()
         // Two empty soon to be perfect arrays
         var params = [Variable]()
         var optim_grads = [Tensor]()
         // Store the computed gradients for our parameters
-        for (node, grad) in grads {
+        for (node, grad) in grads.sorted(by: { $0.key < $1.key }) {
             if node.type == .variable {
                 params.append(node)
                 optim_grads.append(grad)
+//                print(node.out!.shape)
             }
-            print(node.type.rawValue)
+            let str = node.type.rawValue
+            if types[str] != nil {
+                types[str]! += 1
+            } else {
+                types[str] = 1
+            }
         }
+//        for (key, val) in types {
+//            print("\(key): \(val)")
+//        }
         // Use chosen optimizer to find out optimized gradients
         optim_grads.withUnsafeBufferPointer { param_gradsPtr in
             optim_grads = optim.gradients(grads_ptr: param_gradsPtr)
@@ -676,13 +739,13 @@ class Session {
 }
 
 // MARK: Optimizer
-protocol Optimizer {
+public protocol Optimizer {
     
     func gradients(grads_ptr: UnsafeBufferPointer<Tensor>) -> [Tensor]
 }
 
 // MARK: ADAM
-class Adam: Optimizer {
+public final class Adam: Optimizer {
     
     private var m = [Tensor]()
     private var v = [Tensor]()
@@ -691,18 +754,18 @@ class Adam: Optimizer {
     private var b2: Double
     private var t: Int
     
-    init(b1: Double, b2: Double) {
+    public init(b1: Double = 0.9, b2: Double = 0.999) {
         self.b1 = b1
         self.b2 = b2
         self.t = 0
     }
     
-    func inc() {
+    public func inc() {
         // Add to t on each epoch
         t += 1
     }
     
-    func gradients(grads_ptr: UnsafeBufferPointer<Tensor>) -> [Tensor] {
+    public func gradients(grads_ptr: UnsafeBufferPointer<Tensor>) -> [Tensor] {
         // Get our mean moments for our grads
         m = mean(derivatives: grads_ptr, m: m, b1: b1)
         // Get our variance moments for our grads
