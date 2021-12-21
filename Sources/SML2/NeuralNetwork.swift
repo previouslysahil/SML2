@@ -7,6 +7,7 @@
 
 import Foundation
 
+// MARK: Sequence
 public struct Sequence {
     
     public private (set)var layers: [Layer]
@@ -63,6 +64,7 @@ public struct Sequence {
     }
 }
 
+// MARK: Layer
 public class Layer: Variable {
     
     final var input: Variable {
@@ -81,6 +83,7 @@ public class Layer: Variable {
     }
 }
 
+// MARK: Linear
 public final class Linear: Layer {
     
     private var combination: Tensor?
@@ -145,6 +148,7 @@ public final class Linear: Layer {
     }
 }
 
+// MARK: Sigmoid
 public final class Sigmoid: Layer {
     
     // Placeholder in case input currently unknown (we haven't fed forward)
@@ -170,6 +174,7 @@ public final class Sigmoid: Layer {
     }
 }
 
+// MARK: ReLU
 public final class ReLU: Layer {
     
     // Placeholder in case input currently unknown (we haven't fed forward)
@@ -195,6 +200,7 @@ public final class ReLU: Layer {
     }
 }
 
+// MARK: LReLU
 public final class LReLU: Layer {
     
     // Placeholder in case input currently unknown (we haven't fed forward)
@@ -220,6 +226,7 @@ public final class LReLU: Layer {
     }
 }
 
+// MARK: BatchNorm
 public final class BatchNorm: Layer {
     
     private var data_norm: Tensor?
@@ -295,11 +302,7 @@ public final class BatchNorm: Layer {
     }
 }
 
-public enum ProcessType {
-    case data
-    case pred
-}
-
+// MARK: Process
 public final class Process {
     
     public func shuffle(data: [[Double]], labels: [[Double]]) -> (shuffledData: [[Double]], shuffledLabels: [[Double]]) {
@@ -344,4 +347,9 @@ public final class Process {
             return (input - mean.transpose()) / std.transpose()
         }
     }
+}
+
+public enum ProcessType {
+    case data
+    case pred
 }

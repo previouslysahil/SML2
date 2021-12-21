@@ -906,6 +906,7 @@ extension Tensor {
         return (TensorArrayView<Int>(shape.prefix(upTo: t)), TensorArrayView<Int>(shape.suffix(from: t)))
     }
 }
+// MARK: TensorArrayView
 public struct TensorArrayView<T> {
     public var view: ArraySlice<T>
     public var count: Int {
