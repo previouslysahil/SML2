@@ -38,6 +38,10 @@ final class SML2TensorTests: XCTestCase {
         var tensor: Tensor
         
         let arr_one: [Double] = [1, 2, 3, 4, 5]
+        tensor = Tensor(arr_one)
+        XCTAssert(tensor[1] == 2.0, "query get row vec")
+        tensor[4] = -1
+        XCTAssert(tensor[4] == -1, "query set row vec")
         tensor = Tensor(arr_one, type: .row)
         XCTAssert(tensor[0, 1] == 2.0, "query get row vec")
         tensor[0, 4] = -1
@@ -318,7 +322,12 @@ final class SML2TensorTests: XCTestCase {
         ]
         let ans4: Double = 30
         XCTAssert((tensor1 <*> tensor2) == Tensor(ans3), "mat mul 4x1 with 1x4")
-        XCTAssert((tensor2 <*> tensor1) == Tensor(ans4), "mat mul 1x4 with 4x1")
+        XCTAssert((tensor2 <*> tensor1) == Tensor(shape: [1, 1], grid: [ans4]), "mat mul 1x4 with 4x1")
+        
+        tensor1 = Tensor(shape: [1, 4, 1], grid: [1, 2, 3, 4])
+        tensor2 = Tensor([1, 2, 3, 4], type: .row)
+        XCTAssert((tensor1 <*> tensor2) == Tensor(shape: [1, 4, 4], grid: ans3.flatMap({ $0 })), "mat mul 4x1 with 1x4")
+        XCTAssert((tensor2 <*> tensor1) == Tensor(shape: [1, 1, 1], grid: [ans4]), "mat mul 1x4 with 4x1")
     }
     
     func testSumDiag() throws {

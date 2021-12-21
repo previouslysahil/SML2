@@ -10,7 +10,7 @@ import XCTest
 
 final class SML2NeuralTests: XCTestCase {
     
-    let parallel = true
+    let parallel = false // usually non-parallel works better, why?
     let eps = 0.0000001
     let bound = 0.0001
     
@@ -537,9 +537,9 @@ final class SML2NeuralTests: XCTestCase {
 }
 
 /*
- Tensor struct doesn't handle extra shapes [1, 1, 1], [1, 1] well (AKA doesn't know they are doubles, hotfix implemented) fix this! probably happening elsewhere as well
+ Tensor struct can now handle extra shapes
  SumAxis for 3 >= tensors does not work
  Add custom print for tensor
- Test batchnorm layer is correct with 'hand' calculated gradients
+ Test batchnorm layer is correct with 'hand' calculated gradients (already kinda did this but maybe confirm? maybe also do batchnorm the longer way?)
  t[cols: range] not implemented
  */

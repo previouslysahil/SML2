@@ -390,8 +390,11 @@ public final class Add: BinaryOp {
         let b = inputs[1].out!
         // Gradient for input_nodes[0] AKA a
         var gradA = dOut!
-        var axis = 0
         // Assumes a.shape.count == dOut!.shape.count
+        while gradA.shape.count > a.shape.count {
+            gradA = gradA.sum(axis: 0)
+        }
+        var axis = 0
         // Condense gradients for potential vector * matrix math
         for dim in a.shape {
             if dim == 1 { gradA = gradA.sum(axis: axis, keepDim: true) }
@@ -400,8 +403,11 @@ public final class Add: BinaryOp {
         grads[0] = gradA
         // Gradient for input_nodes[1] AKA b
         var gradB = dOut!
-        axis = 0
         // Assumes b.shape.count == dOut!.shape.count
+        while gradB.shape.count > b.shape.count {
+            gradB = gradB.sum(axis: 0)
+        }
+        axis = 0
         // Condense gradients for potential vector * matrix math
         for dim in b.shape {
             if dim == 1 { gradB = gradB.sum(axis: axis, keepDim: true) }
@@ -424,8 +430,11 @@ public final class Mul: BinaryOp {
         let b = inputs[1].out!
         // Gradient for input_nodes[0] AKA a
         var gradA = dOut! * b
-        var axis = 0
         // Assumes a.shape.count == dOut!.shape.count
+        while gradA.shape.count > a.shape.count {
+            gradA = gradA.sum(axis: 0)
+        }
+        var axis = 0
         // Condense gradients for potential vector * matrix math
         for dim in a.shape {
             if dim == 1 { gradA = gradA.sum(axis: axis, keepDim: true) }
@@ -434,8 +443,11 @@ public final class Mul: BinaryOp {
         grads[0] = gradA
         // Gradient for input_nodes[1] AKA b
         var gradB = dOut! * a
-        axis = 0
         // Assumes b.shape.count == dOut!.shape.count
+        while gradB.shape.count > b.shape.count {
+            gradB = gradB.sum(axis: 0)
+        }
+        axis = 0
         // Condense gradients for potential vector * matrix math
         for dim in b.shape {
             if dim == 1 { gradB = gradB.sum(axis: axis, keepDim: true) }

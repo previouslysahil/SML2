@@ -4,11 +4,7 @@
 //
 //  Created by Sahil Srivastava on 12/4/21.
 //
-//  IMPORTANT NOTES: Tensor.shape.count == 1 DO NOT EXIST
-//  Vectors are treated as matrices with shape = [1, N]
-//  for row vectors and shape = [N, 1] for column vectors
-//  AKA 1D-Tensors are just 2D-Tensors with one dimension
-//  equal to 1. All other Tensor.shape.count >= 0 are valid
+//  IMPORTANT NOTES: 0_0
 //
 //  This Tensor struct is heavily influenced by the Matrix
 //  struct created by Matthijs Hollemans and Mattt Thompson,
@@ -58,10 +54,10 @@ extension Tensor {
         self.init(shape: [], repeating: val)
     }
     public init(_ vec: [Double]) {
-        self.init(shape: [1, vec.count], repeating: 0.0)
+        self.init(shape: [vec.count], repeating: 0.0)
         vec.withUnsafeBufferPointer { vecPtr in
             grid.withUnsafeMutableBufferPointer { gridPtr in
-                cblas_dcopy(Int32(shape[1]), vecPtr.baseAddress!, 1, gridPtr.baseAddress!, 1)
+                cblas_dcopy(Int32(shape[0]), vecPtr.baseAddress!, 1, gridPtr.baseAddress!, 1)
             }
         }
     }
@@ -98,7 +94,7 @@ extension Tensor {
     public init(_ mats: [[[Double]]]) {
         self.init(shape: [mats.count, mats.first!.count, mats.first!.first!.count], repeating: 0.0)
         var j = 0
-        lo: for mat in mats {
+        for mat in mats {
             for row in mat {
                 row.withUnsafeBufferPointer { rowPtr in
                     grid.withUnsafeMutableBufferPointer { gridPtr in
@@ -140,56 +136,72 @@ extension Tensor {
     }
     public subscript(mat m: Int) -> Tensor {
         get {
-            precondition(shape.count == 3, "Must be a 3D-Tensor")
-            var t = Tensor(shape: [shape[1], shape[2]], repeating: 0)
+            let (leftover, reshaped) = extra()
+            precondition(reshaped.count == 3, "Must be a 3D-Tensor")
+            var t = Tensor(shape: [reshaped[1], reshaped[2]], repeating: 0)
             grid.withUnsafeBufferPointer { gridPtr in
                 t.grid.withUnsafeMutableBufferPointer { tPtr in
-                    cblas_dcopy(Int32(shape[1] * shape[2]), gridPtr.baseAddress! + m * (shape[1] * shape[2]), 1, tPtr.baseAddress!, 1)
+                    cblas_dcopy(Int32(reshaped[1] * reshaped[2]), gridPtr.baseAddress! + m * (reshaped[1] * reshaped[2]), 1, tPtr.baseAddress!, 1)
                 }
             }
+            t.shape.insert(contentsOf: leftover.view, at: 0)
             return t
         }
         set(t) {
-            precondition(shape.count == 3, "Must be a 3D-Tensor")
-            precondition(t.shape.count == 2 && t.shape[0] == shape[1] && t.shape[1] == shape[2], "Not compatible matrix dimensions")
+            let (_, reshaped) = extra()
+            precondition(reshaped.count == 3, "Must be a 3D-Tensor")
+            precondition(t.shape.count == 2 && t.shape[0] == reshaped[1] && t.shape[1] == reshaped[2], "Not compatible matrix dimensions")
             grid.withUnsafeMutableBufferPointer { gridPtr in
                 t.grid.withUnsafeBufferPointer { tPtr in
-                    cblas_dcopy(Int32(shape[1] * shape[2]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + m * (shape[1] * shape[2]), 1)
+                    cblas_dcopy(Int32(reshaped[1] * reshaped[2]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + m * (reshaped[1] * reshaped[2]), 1)
                 }
             }
         }
     }
     public subscript(row r: Int) -> Tensor {
         get {
-            precondition(shape.count == 2, "Must be a matrix")
-            var t = Tensor(shape: [1, shape[1]], repeating: 0)
+            let (leftover, reshaped) = extra()
+            precondition(reshaped.count == 2, "Must be a matrix")
+            var t = Tensor(shape: [1, reshaped[1]], repeating: 0)
             grid.withUnsafeBufferPointer { gridPtr in
                 t.grid.withUnsafeMutableBufferPointer { tPtr in
-                    cblas_dcopy(Int32(shape[1]), gridPtr.baseAddress! + r * shape[1], 1, tPtr.baseAddress!, 1)
+                    cblas_dcopy(Int32(reshaped[1]), gridPtr.baseAddress! + r * reshaped[1], 1, tPtr.baseAddress!, 1)
                 }
             }
+            t.shape.insert(contentsOf: leftover.view, at: 0)
             return t
         }
         set(t) {
-            precondition(shape.count == 2, "Must be a matrix")
-            precondition(t.shape.count == 2 && t.shape[0] == 1 && t.shape[1] == shape[1], "Not compatible vector dimensions")
-            grid.withUnsafeMutableBufferPointer { gridPtr in
-                t.grid.withUnsafeBufferPointer { tPtr in
-                    cblas_dcopy(Int32(shape[1]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + r * shape[1], 1)
+            let (_, reshaped) = extra()
+            if t.shape.count == 1 && t.shape[0] == reshaped[1] {
+                grid.withUnsafeMutableBufferPointer { gridPtr in
+                    t.grid.withUnsafeBufferPointer { tPtr in
+                        cblas_dcopy(Int32(reshaped[1]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + r * reshaped[1], 1)
+                    }
+                }
+            } else {
+                precondition(reshaped.count == 2, "Must be a matrix")
+                precondition(t.shape.count == 2 && t.shape[0] == 1 && t.shape[1] == reshaped[1], "Not compatible vector dimensions")
+                grid.withUnsafeMutableBufferPointer { gridPtr in
+                    t.grid.withUnsafeBufferPointer { tPtr in
+                        cblas_dcopy(Int32(reshaped[1]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + r * reshaped[1], 1)
+                    }
                 }
             }
         }
     }
     public subscript(rows range: Range<Int>) -> Tensor {
         get {
-            precondition(shape.count == 2, "Must be a matrix")
-            precondition(range.lowerBound >= 0 && range.upperBound <= shape[0], "Invalid range")
-            var t = Tensor(shape: [(range.upperBound - range.lowerBound), shape[1]], repeating: 0)
+            let (leftover, reshaped) = extra()
+            precondition(reshaped.count == 2, "Must be a matrix")
+            precondition(range.lowerBound >= 0 && range.upperBound <= reshaped[0], "Invalid range")
+            var t = Tensor(shape: [(range.upperBound - range.lowerBound), reshaped[1]], repeating: 0)
             grid.withUnsafeBufferPointer { gridPtr in
                 t.grid.withUnsafeMutableBufferPointer { tPtr in
-                    cblas_dcopy(Int32(shape[1] * range.count), gridPtr.baseAddress! + range.lowerBound * shape[1], 1, tPtr.baseAddress!, 1)
+                    cblas_dcopy(Int32(reshaped[1] * range.count), gridPtr.baseAddress! + range.lowerBound * reshaped[1], 1, tPtr.baseAddress!, 1)
                 }
             }
+            t.shape.insert(contentsOf: leftover.view, at: 0)
             return t
         }
     }
@@ -200,32 +212,37 @@ extension Tensor {
     }
     public subscript(col c: Int) -> Tensor {
         get {
-            precondition(shape.count == 2, "Must be a matrix")
-            var t = Tensor(shape: [shape[0], 1], repeating: 0)
+            let (leftover, reshaped) = extra()
+            precondition(reshaped.count == 2, "Must be a matrix")
+            var t = Tensor(shape: [reshaped[0], 1], repeating: 0)
             grid.withUnsafeBufferPointer { gridPtr in
                 t.grid.withUnsafeMutableBufferPointer { tPtr in
-                    cblas_dcopy(Int32(shape[0]), gridPtr.baseAddress! + c, Int32(shape[1]), tPtr.baseAddress!, 1)
+                    cblas_dcopy(Int32(reshaped[0]), gridPtr.baseAddress! + c, Int32(reshaped[1]), tPtr.baseAddress!, 1)
                 }
             }
+            t.shape.insert(contentsOf: leftover.view, at: 0)
             return t
         }
         set(t) {
-            precondition(shape.count == 2, "Must be a matrix")
-            precondition(t.shape.count == 2 && t.shape[1] == 1 && t.shape[0] == shape[0], "Not compatible vector dimensions")
+            let (_, reshaped) = extra()
+            precondition(reshaped.count == 2, "Must be a matrix")
+            precondition(t.shape.count == 2 && t.shape[1] == 1 && t.shape[0] == reshaped[0], "Not compatible vector dimensions")
             grid.withUnsafeMutableBufferPointer { gridPtr in
                 t.grid.withUnsafeBufferPointer { tPtr in
-                    cblas_dcopy(Int32(shape[0]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + c, Int32(shape[1]))
+                    cblas_dcopy(Int32(reshaped[0]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + c, Int32(reshaped[1]))
                 }
             }
         }
     }
     public subscript(val v: Int) -> Double {
         get {
-            precondition(shape.count == 2 && shape.contains(1), "Must be a vector")
+            let (_, reshaped) = extra()
+            precondition((reshaped.count == 2 && reshaped[1] == 1) || (reshaped.count == 1), "Must be a vector")
             return grid[v]
         }
         set(t) {
-            precondition(shape.count == 2 && shape.contains(1), "Must be a vector")
+            let (_, reshaped) = extra()
+            precondition((reshaped.count == 2 && reshaped[1] == 1) || (reshaped.count == 1), "Must be a vector")
             grid[v] = t
         }
     }
@@ -254,15 +271,16 @@ extension Tensor {
 // MARK: - Matrix Specific
 extension Tensor {
     public func matInv() -> Tensor {
-        precondition(shape.count == 2, "Must be a matrix")
-        precondition(shape[0] == shape[1], "Must be a square matrix")
+        let (leftover, reshaped) = extra()
+        precondition(reshaped.count == 2, "Must be a matrix")
+        precondition(reshaped[0] == reshaped[1], "Must be a square matrix")
         var t = self
         t.grid.withUnsafeMutableBufferPointer { ptr in
-            var ipiv = [__CLPK_integer](repeating: 0, count: shape[0] * shape[0])
-            var lwork = __CLPK_integer(shape[1] * shape[1])
+            var ipiv = [__CLPK_integer](repeating: 0, count: reshaped[0] * reshaped[0])
+            var lwork = __CLPK_integer(reshaped[1] * reshaped[1])
             var work = [CDouble](repeating: 0, count: Int(lwork))
             var error: __CLPK_integer = 0
-            var nc = __CLPK_integer(shape[1])
+            var nc = __CLPK_integer(reshaped[1])
             var m = nc
             var n = nc
             
@@ -270,27 +288,60 @@ extension Tensor {
             dgetri_(&m, ptr.baseAddress!, &nc, &ipiv, &work, &lwork, &error)
             assert(error == 0, "Matrix not invertible")
         }
+        t.shape.insert(contentsOf: leftover.view, at: 0)
         return t
     }
     
     public func transpose() -> Tensor {
-        precondition(shape.count == 2, "Must be a matrix")
-        var t = Tensor(shape: shape.reversed(), repeating: 0)
+        let (leftover, reshaped) = extra()
+        // Scalar
+        if reshaped.count == 0 {
+            return self
+        }
+        // Row vector
+        if reshaped.count == 1 {
+            var t = Tensor(shape: [reshaped[0], 1], grid: grid)
+            if shape.count > t.shape.count {
+                t.shape.insert(contentsOf: leftover.view, at: 0)
+            }
+            return t
+        } else if reshaped.count == 2 && reshaped[1] == 1 {
+            // Column vector
+            var t = Tensor(shape: [reshaped[1], reshaped[0]], grid: grid)
+            t.shape.insert(contentsOf: leftover.view, at: 0)
+            return t
+        }
+        precondition(reshaped.count == 2, "Must be a matrix or vector")
+        var t = Tensor(shape: reshaped.view.reversed(), repeating: 0)
         grid.withUnsafeBufferPointer { gridPtr in
             t.grid.withUnsafeMutableBufferPointer { tPtr in
                 vDSP_mtransD(gridPtr.baseAddress!, 1, tPtr.baseAddress!, 1, vDSP_Length(t.shape[0]), vDSP_Length(t.shape[1]))
             }
         }
+        t.shape.insert(contentsOf: leftover.view, at: 0)
         return t
     }
     public func diag() -> Tensor {
-        precondition(shape.count == 2, "Must be a matrix")
+        let (leftover, reshaped) = extra()
+        if reshaped.count == 1 {
+            // Row vector
+            var t = Tensor(shape: shape, repeating: 0)
+            t.grid[0] = grid[0]
+            return t
+        } else if reshaped.count == 2 && reshaped[1] == 1 {
+            // Column vector
+            var t = Tensor(shape: shape, repeating: 0)
+            t.grid[0] = grid[0]
+            return t
+        }
+        precondition(reshaped.count == 2, "Must be a matrix or vector")
         var t = Tensor(shape: shape, repeating: 0)
         grid.withUnsafeBufferPointer { gridPtr in
             t.grid.withUnsafeMutableBufferPointer { tPtr in
-                cblas_dcopy(Int32(min(shape[0], shape[1])), gridPtr.baseAddress!, Int32(shape[1] + 1), tPtr.baseAddress!, Int32(shape[1] + 1))
+                cblas_dcopy(Int32(min(reshaped[0], reshaped[1])), gridPtr.baseAddress!, Int32(reshaped[1] + 1), tPtr.baseAddress!, Int32(reshaped[1] + 1))
             }
         }
+        t.shape.insert(contentsOf: leftover.view, at: 0)
         return t
     }
 }
@@ -298,43 +349,23 @@ extension Tensor {
 // SUPPORTS UP TO 3D-Tensor OPERATIONS (same shape up to ND-Tensor)
 public func + (lhs: Tensor, rhs: Tensor) -> Tensor {
     // Remove unnecessary dimensions for operation then add them back if necessary
-    if lhs.shape.filter({ $0 == 1 }).count > 1 && lhs.shape.count > 2 && rhs.shape.filter({ $0 == 1 }).count > 1 && rhs.shape.count > 2 {
-        var leftover_lhs = [Int]()
-        var i_lhs = 0
-        while i_lhs < lhs.shape.count && (lhs.shape.count - i_lhs - 1) > 1 && lhs.shape[i_lhs] == 1 {
-            leftover_lhs.append(lhs.shape[i_lhs])
-            i_lhs += 1
-        }
-        var leftover_rhs = [Int]()
-        var i_rhs = 0
-        while i_rhs < rhs.shape.count && (rhs.shape.count - i_rhs - 1) > 1 && rhs.shape[i_rhs] == 1 {
-            leftover_rhs.append(rhs.shape[i_rhs])
-            i_rhs += 1
-        }
-        var res = Tensor(shape: Array(lhs.shape.suffix(from: i_lhs)), grid: lhs.grid) + Tensor(shape: Array(rhs.shape.suffix(from: i_rhs)), grid: rhs.grid)
-        res.shape.insert(contentsOf: leftover_lhs.count > leftover_rhs.count ? leftover_lhs : leftover_rhs, at: 0)
-        return res
-    } else if lhs.shape.filter({ $0 == 1 }).count > 1 && lhs.shape.count > 2 {
-        var leftover = [Int]()
-        var i = 0
-        while i < lhs.shape.count && (lhs.shape.count - i - 1) > 1 && lhs.shape[i] == 1 {
-            leftover.append(lhs.shape[i])
-            i += 1
-        }
-        var res = Tensor(shape: Array(lhs.shape.suffix(from: i)), grid: lhs.grid) + rhs
-        res.shape.insert(contentsOf: leftover, at: 0)
-        return res
-    } else if rhs.shape.filter({ $0 == 1 }).count > 1 && rhs.shape.count > 2 {
-        var leftover = [Int]()
-        var i = 0
-        while i < rhs.shape.count && (rhs.shape.count - i - 1) > 1 && rhs.shape[i] == 1 {
-            leftover.append(rhs.shape[i])
-            i += 1
-        }
-        var res = lhs + Tensor(shape: Array(rhs.shape.suffix(from: i)), grid: rhs.grid)
-        res.shape.insert(contentsOf: leftover, at: 0)
-        return res
+    let l = lhs.extra()
+    let r = rhs.extra()
+    var res = trueAdd(Tensor(shape: Array(l.reshaped.view), grid: lhs.grid), Tensor(shape: Array(r.reshaped.view), grid: rhs.grid))
+    while res.shape.count < lhs.shape.count || res.shape.count < rhs.shape.count {
+        res.shape.insert(1, at: 0)
     }
+    return res
+}
+public func + (lhs: Tensor, rhs: Double) -> Tensor {
+    return lhs + Tensor(rhs)
+}
+public func + (lhs: Double, rhs: Tensor) -> Tensor {
+    return Tensor(lhs) + rhs
+}
+// MARK: Add Arithmetic True
+// Assumes extra shape has been rid
+fileprivate func trueAdd(_ lhs: Tensor, _ rhs: Tensor) -> Tensor {
     if lhs.shape == rhs.shape {
         // Double + Double or Vector + Vector of same size or Matrix + Matrix of same size or ND-Tensor + ND-Tensor of same size
         var t = rhs
@@ -358,90 +389,78 @@ public func + (lhs: Tensor, rhs: Tensor) -> Tensor {
         return t
     } else if lhs.shape.count >= 1 && rhs.shape.count == 0 {
         // Vector + Double or Matrix + Double or ND-Tensor + Double
-        return rhs + lhs
-    } else if lhs.shape.count == 2 && rhs.shape.count == 2 {
-        // Same shape matrices taken care of above, this should be 'Vector' + Matrix
-        // Check for a double
-        if lhs.shape[0] == 1 && lhs.shape[1] == 1 {
-            // 'Vector' is a double
-            return lhs.grid.first! + rhs
-        } else if rhs.shape[0] == 1 && rhs.shape[1] == 1 {
-            // Matrix is a double
-            return lhs + rhs.grid.first!
-        }
-        if lhs.shape[1] == 1 {
-            // 'Vector' is a column vector (N by 1)
-            if lhs.shape[0] == rhs.shape[0] {
-                var t = rhs
-                lhs.grid.withUnsafeBufferPointer { lhsPtr in
-                    rhs.grid.withUnsafeBufferPointer { rhsPtr in
-                        t.grid.withUnsafeMutableBufferPointer { tPtr in
-                            for r in 0..<rhs.shape[0] {
-                                var val = lhsPtr[r]
-                                vDSP_vsaddD(rhsPtr.baseAddress! + r * rhs.shape[1], 1, &val, tPtr.baseAddress! + r * rhs.shape[1], 1, vDSP_Length(rhs.shape[1]))
-                            }
-                        }
-                    }
-                }
-                return t
-            }
-        } else if lhs.shape[0] == 1 {
-            // 'Vector' is a row vector (1 by N)
-            if lhs.shape[1] == rhs.shape[1] {
-                var t = rhs
-                lhs.grid.withUnsafeBufferPointer { lhsPtr in
-                    rhs.grid.withUnsafeBufferPointer { rhsPtr in
-                        t.grid.withUnsafeMutableBufferPointer { tPtr in
-                            for c in 0..<rhs.shape[1] {
-                                var val = lhsPtr[c]
-                                vDSP_vsaddD(rhsPtr.baseAddress! + c, rhs.shape[1], &val, tPtr.baseAddress! + c, rhs.shape[1], vDSP_Length(rhs.shape[0]))
-                            }
-                        }
-                    }
-                }
-                return t
-            }
-        } else if rhs.shape[1] == 1 || rhs.shape[0] == 1 {
-            return rhs + lhs
-        }
-    } else if lhs.shape.count == 2 && rhs.shape.count == 3 {
-        // 'Vector' + 3D-Tensor Matrix + 3D-Tensor
-        if lhs.shape[0] == rhs.shape[1] && lhs.shape[1] == rhs.shape[2] {
+        return trueAdd(rhs, lhs)
+    } else if lhs.shape.count == 1 && rhs.shape.count == 2 {
+        // Row vector (1 by N) + Matrix
+        if lhs.shape[0] == rhs.shape[1] {
             var t = rhs
-            for m in 0..<rhs.shape[0] {
-                t[mat: m] = lhs + rhs[mat: m]
+            lhs.grid.withUnsafeBufferPointer { lhsPtr in
+                rhs.grid.withUnsafeBufferPointer { rhsPtr in
+                    t.grid.withUnsafeMutableBufferPointer { tPtr in
+                        for c in 0..<rhs.shape[1] {
+                            var val = lhsPtr[c]
+                            vDSP_vsaddD(rhsPtr.baseAddress! + c, rhs.shape[1], &val, tPtr.baseAddress! + c, rhs.shape[1], vDSP_Length(rhs.shape[0]))
+                        }
+                    }
+                }
             }
             return t
-        } else if lhs.shape[1] == 1 {
-            if lhs.shape[0] == rhs.shape[1] {
-                // 'Vector' is a column vector (N by 1)
-                var t = rhs
-                for m in 0..<rhs.shape[0] {
-                    t[mat: m] = lhs + rhs[mat: m]
+        }
+    } else if lhs.shape.count == 2 && rhs.shape.count == 1 {
+        // Matrix + Row vector (1 by N)
+        return trueAdd(rhs, lhs)
+    } else if lhs.shape.count == 2 && rhs.shape.count == 2  && lhs.shape[1] == 1 {
+        // Column vector (N by 1) + Matrix
+        if lhs.shape[0] == rhs.shape[0] {
+            var t = rhs
+            lhs.grid.withUnsafeBufferPointer { lhsPtr in
+                rhs.grid.withUnsafeBufferPointer { rhsPtr in
+                    t.grid.withUnsafeMutableBufferPointer { tPtr in
+                        for r in 0..<rhs.shape[0] {
+                            var val = lhsPtr[r]
+                            vDSP_vsaddD(rhsPtr.baseAddress! + r * rhs.shape[1], 1, &val, tPtr.baseAddress! + r * rhs.shape[1], 1, vDSP_Length(rhs.shape[1]))
+                        }
+                    }
                 }
-                return t
             }
-        } else if lhs.shape[0] == 1 {
-            if lhs.shape[1] == rhs.shape[2] {
-                // 'Vector' is a row vector (1 by N)
-                var t = rhs
-                for m in 0..<rhs.shape[0] {
-                    t[mat: m] = lhs + rhs[mat: m]
-                }
-                return t
+            return t
+        }
+    } else if rhs.shape.count == 2 && lhs.shape.count == 2  && rhs.shape[1] == 1 {
+        // Matrix + Column vector (N by 1)
+        return trueAdd(rhs, lhs)
+    } else if lhs.shape.count == 1 && rhs.shape.count == 3 {
+        // Row vector + 3D-Tensor
+        if lhs.shape[0] == rhs.shape[2] {
+            var t = rhs
+            for m in 0..<rhs.shape[0] {
+                t[mat: m] = trueAdd(lhs, rhs[mat: m])
             }
+            return t
+        }
+    } else if lhs.shape.count == 3 && rhs.shape.count == 1 {
+        // 3D-Tensor + Row vector
+        return trueAdd(rhs, lhs)
+    } else if lhs.shape.count == 2 && rhs.shape.count == 3 {
+        if lhs.shape[0] == rhs.shape[1] && lhs.shape[1] == rhs.shape[2] {
+            // Matrix + 3D-Tensor
+            var t = rhs
+            for m in 0..<rhs.shape[0] {
+                t[mat: m] = trueAdd(lhs, rhs[mat: m])
+            }
+            return t
+        } else if lhs.shape[0] == rhs.shape[1] && lhs.shape[1] == 1 {
+            // Column vector + 3D-Tensor
+            var t = rhs
+            for m in 0..<rhs.shape[0] {
+                t[mat: m] = trueAdd(lhs, rhs[mat: m])
+            }
+            return t
         }
     } else if lhs.shape.count == 3 && rhs.shape.count == 2 {
         // 3D-Tensor + Matrix
-        return rhs + lhs
+        return trueAdd(rhs, lhs)
     }
     fatalError("Cannot elementwise add (or subtract) lhs shape of \(lhs.shape) with rhs shape of \(rhs.shape)")
-}
-public func + (lhs: Tensor, rhs: Double) -> Tensor {
-    return lhs + Tensor(rhs)
-}
-public func + (lhs: Double, rhs: Tensor) -> Tensor {
-    return Tensor(lhs) + rhs
 }
 // MARK: - Subtraction Arithmetic
 // SUPPORTS UP TO 3D-Tensor OPERATIONS (same shape up to ND-Tensor)
@@ -467,43 +486,23 @@ public func - (lhs: Double, rhs: Tensor) -> Tensor {
 // SUPPORTS UP TO 3D-Tensor OPERATIONS (same shape up to ND-Tensor)
 public func * (lhs: Tensor, rhs: Tensor) -> Tensor {
     // Remove unnecessary dimensions for operation then add them back if necessary
-    if lhs.shape.filter({ $0 == 1 }).count > 1 && lhs.shape.count > 2 && rhs.shape.filter({ $0 == 1 }).count > 1 && rhs.shape.count > 2 {
-        var leftover_lhs = [Int]()
-        var i_lhs = 0
-        while i_lhs < lhs.shape.count && (lhs.shape.count - i_lhs - 1) > 1 && lhs.shape[i_lhs] == 1 {
-            leftover_lhs.append(lhs.shape[i_lhs])
-            i_lhs += 1
-        }
-        var leftover_rhs = [Int]()
-        var i_rhs = 0
-        while i_rhs < rhs.shape.count && (rhs.shape.count - i_rhs - 1) > 1 && rhs.shape[i_rhs] == 1 {
-            leftover_rhs.append(rhs.shape[i_rhs])
-            i_rhs += 1
-        }
-        var res = Tensor(shape: Array(lhs.shape.suffix(from: i_lhs)), grid: lhs.grid) * Tensor(shape: Array(rhs.shape.suffix(from: i_rhs)), grid: rhs.grid)
-        res.shape.insert(contentsOf: leftover_lhs.count > leftover_rhs.count ? leftover_lhs : leftover_rhs, at: 0)
-        return res
-    } else if lhs.shape.filter({ $0 == 1 }).count > 1 && lhs.shape.count > 2 {
-        var leftover = [Int]()
-        var i = 0
-        while i < lhs.shape.count && (lhs.shape.count - i - 1) > 1 && lhs.shape[i] == 1 {
-            leftover.append(lhs.shape[i])
-            i += 1
-        }
-        var res = Tensor(shape: Array(lhs.shape.suffix(from: i)), grid: lhs.grid) * rhs
-        res.shape.insert(contentsOf: leftover, at: 0)
-        return res
-    } else if rhs.shape.filter({ $0 == 1 }).count > 1 && rhs.shape.count > 2 {
-        var leftover = [Int]()
-        var i = 0
-        while i < rhs.shape.count && (rhs.shape.count - i - 1) > 1 && rhs.shape[i] == 1 {
-            leftover.append(rhs.shape[i])
-            i += 1
-        }
-        var res = lhs * Tensor(shape: Array(rhs.shape.suffix(from: i)), grid: rhs.grid)
-        res.shape.insert(contentsOf: leftover, at: 0)
-        return res
+    let l = lhs.extra()
+    let r = rhs.extra()
+    var res = trueMult(Tensor(shape: Array(l.reshaped.view), grid: lhs.grid), Tensor(shape: Array(r.reshaped.view), grid: rhs.grid))
+    while res.shape.count < lhs.shape.count || res.shape.count < rhs.shape.count {
+        res.shape.insert(1, at: 0)
     }
+    return res
+}
+public func * (lhs: Tensor, rhs: Double) -> Tensor {
+    return lhs * Tensor(rhs)
+}
+public func * (lhs: Double, rhs: Tensor) -> Tensor {
+    return Tensor(lhs) * rhs
+}
+// MARK: Multiplication Arithmetic True
+// Assumes extra shape has been rid
+fileprivate func trueMult(_ lhs: Tensor, _ rhs: Tensor) -> Tensor {
     if lhs.shape == rhs.shape {
         // Double * Double or Vector * Vector of same size or Matrix * Matrix of same size or ND-Tensor * ND-Tensor of same size
         var t = rhs
@@ -527,90 +526,78 @@ public func * (lhs: Tensor, rhs: Tensor) -> Tensor {
         return t
     } else if lhs.shape.count >= 1 && rhs.shape.count == 0 {
         // Vector * Double or Matrix * Double or ND-Tensor * Double
-        return rhs * lhs
-    } else if lhs.shape.count == 2 && rhs.shape.count == 2 {
-        // Same shape matrices taken care of above, this should be 'Vector' + Matrix
-        // Check for a double
-        if lhs.shape[0] == 1 && lhs.shape[1] == 1 {
-            // 'Vector' is a double
-            return lhs.grid.first! * rhs
-        } else if rhs.shape[0] == 1 && rhs.shape[1] == 1 {
-            // Matrix is a double
-            return lhs * rhs.grid.first!
-        }
-        if lhs.shape[1] == 1 {
-            // 'Vector' is a column vector (N by 1)
-            if lhs.shape[0] == rhs.shape[0] {
-                var t = rhs
-                lhs.grid.withUnsafeBufferPointer { lhsPtr in
-                    rhs.grid.withUnsafeBufferPointer { rhsPtr in
-                        t.grid.withUnsafeMutableBufferPointer { tPtr in
-                            for r in 0..<rhs.shape[0] {
-                                var val = lhsPtr[r]
-                                vDSP_vsmulD(rhsPtr.baseAddress! + r * rhs.shape[1], 1, &val, tPtr.baseAddress! + r * rhs.shape[1], 1, vDSP_Length(rhs.shape[1]))
-                            }
-                        }
-                    }
-                }
-                return t
-            }
-        } else if lhs.shape[0] == 1 {
-            // 'Vector' is a row vector (1 by N)
-            if lhs.shape[1] == rhs.shape[1] {
-                var t = rhs
-                lhs.grid.withUnsafeBufferPointer { lhsPtr in
-                    rhs.grid.withUnsafeBufferPointer { rhsPtr in
-                        t.grid.withUnsafeMutableBufferPointer { tPtr in
-                            for c in 0..<rhs.shape[1] {
-                                var val = lhsPtr[c]
-                                vDSP_vsmulD(rhsPtr.baseAddress! + c, rhs.shape[1], &val, tPtr.baseAddress! + c, rhs.shape[1], vDSP_Length(rhs.shape[0]))
-                            }
-                        }
-                    }
-                }
-                return t
-            }
-        } else if rhs.shape[1] == 1 || rhs.shape[0] == 1 {
-            return rhs * lhs
-        }
-    } else if lhs.shape.count == 2 && rhs.shape.count == 3 {
-        // 'Vector' * 3D-Tensor Matrix * 3D-Tensor
-        if lhs.shape[0] == rhs.shape[1] && lhs.shape[1] == rhs.shape[2] {
+        return trueMult(rhs, lhs)
+    } else if lhs.shape.count == 1 && rhs.shape.count == 2 {
+        // Row vector (1 by N) * Matrix
+        if lhs.shape[0] == rhs.shape[1] {
             var t = rhs
-            for m in 0..<rhs.shape[0] {
-                t[mat: m] = lhs * rhs[mat: m]
+            lhs.grid.withUnsafeBufferPointer { lhsPtr in
+                rhs.grid.withUnsafeBufferPointer { rhsPtr in
+                    t.grid.withUnsafeMutableBufferPointer { tPtr in
+                        for c in 0..<rhs.shape[1] {
+                            var val = lhsPtr[c]
+                            vDSP_vsmulD(rhsPtr.baseAddress! + c, rhs.shape[1], &val, tPtr.baseAddress! + c, rhs.shape[1], vDSP_Length(rhs.shape[0]))
+                        }
+                    }
+                }
             }
             return t
-        } else if lhs.shape[1] == 1 {
-            if lhs.shape[0] == rhs.shape[1] {
-                // 'Vector' is a column vector (N by 1)
-                var t = rhs
-                for m in 0..<rhs.shape[0] {
-                    t[mat: m] = lhs * rhs[mat: m]
+        }
+    } else if lhs.shape.count == 2 && rhs.shape.count == 1 {
+        // Matrix * Row vector (1 by N)
+        return trueMult(rhs, lhs)
+    } else if lhs.shape.count == 2 && rhs.shape.count == 2  && lhs.shape[1] == 1 {
+        // Column vector (N by 1) * Matrix
+        if lhs.shape[0] == rhs.shape[0] {
+            var t = rhs
+            lhs.grid.withUnsafeBufferPointer { lhsPtr in
+                rhs.grid.withUnsafeBufferPointer { rhsPtr in
+                    t.grid.withUnsafeMutableBufferPointer { tPtr in
+                        for r in 0..<rhs.shape[0] {
+                            var val = lhsPtr[r]
+                            vDSP_vsmulD(rhsPtr.baseAddress! + r * rhs.shape[1], 1, &val, tPtr.baseAddress! + r * rhs.shape[1], 1, vDSP_Length(rhs.shape[1]))
+                        }
+                    }
                 }
-                return t
             }
-        } else if lhs.shape[0] == 1 {
-            if lhs.shape[1] == rhs.shape[2] {
-                // 'Vector' is a row vector (1 by N)
-                var t = rhs
-                for m in 0..<rhs.shape[0] {
-                    t[mat: m] = lhs * rhs[mat: m]
-                }
-                return t
+            return t
+        }
+    } else if rhs.shape.count == 2 && lhs.shape.count == 2  && rhs.shape[1] == 1 {
+        // Matrix * Column vector (N by 1)
+        return trueMult(rhs, lhs)
+    } else if lhs.shape.count == 1 && rhs.shape.count == 3 {
+        // Row vector * 3D-Tensor
+        if lhs.shape[0] == rhs.shape[2] {
+            var t = rhs
+            for m in 0..<rhs.shape[0] {
+                t[mat: m] = trueMult(lhs, rhs[mat: m])
             }
+            return t
+        }
+    } else if lhs.shape.count == 3 && rhs.shape.count == 1 {
+        // 3D-Tensor * Row vector
+        return trueMult(rhs, lhs)
+    } else if lhs.shape.count == 2 && rhs.shape.count == 3 {
+        if lhs.shape[0] == rhs.shape[1] && lhs.shape[1] == rhs.shape[2] {
+            // Matrix * 3D-Tensor
+            var t = rhs
+            for m in 0..<rhs.shape[0] {
+                t[mat: m] = trueMult(lhs, rhs[mat: m])
+            }
+            return t
+        } else if lhs.shape[0] == rhs.shape[1] && lhs.shape[1] == 1 {
+            // Column vector * 3D-Tensor
+            var t = rhs
+            for m in 0..<rhs.shape[0] {
+                t[mat: m] = trueMult(lhs, rhs[mat: m])
+            }
+            return t
         }
     } else if lhs.shape.count == 3 && rhs.shape.count == 2 {
         // 3D-Tensor * Matrix
-        return rhs * lhs
+        return trueMult(rhs, lhs)
     }
     fatalError("Cannot elementwise multiply (or divide) lhs shape of \(lhs.shape) with rhs shape of \(rhs.shape)")
-}
-public func * (lhs: Tensor, rhs: Double) -> Tensor {
-    return lhs * Tensor(rhs)
-}
-public func * (lhs: Double, rhs: Tensor) -> Tensor {
-    return Tensor(lhs) * rhs
 }
 // MARK: - Division Arithmetic
 // SUPPORTS UP TO 3D-Tensor OPERATIONS (same shape up to ND-Tensor)
@@ -637,32 +624,41 @@ public func / (lhs: Double, rhs: Tensor) -> Tensor {
 }
 // MARK: - Matrix Multiplication Arithmetic
 // SUPPORTS Vector by Vector, Matrix by Vector, Matrix by Matrix, Scalar by Matrix
+// REVISIT NOT MADE FOR EXTRA SHAPE YET
 infix operator <*> : MultiplicationPrecedence
 public func <*> (lhs: Tensor, rhs: Tensor) -> Tensor {
-    // If we have a scalar we just treat this as normal multiplication
+    // Remove unnecessary dimensions for operation then add them back if necessary
+    let l = lhs.extra()
+    let r = rhs.extra()
+    var res = trueMatMult(Tensor(shape: Array(l.reshaped.view), grid: lhs.grid), Tensor(shape: Array(r.reshaped.view), grid: rhs.grid))
+    while res.shape.count < lhs.shape.count || res.shape.count < rhs.shape.count {
+        res.shape.insert(1, at: 0)
+    }
+    return res
+}
+fileprivate func trueMatMult(_ lhs: Tensor, _ rhs: Tensor) -> Tensor {
+    // Multiply scalars (just normal multiplication)
     if lhs.shape.count == 0 || rhs.shape.count == 0 {
         return lhs * rhs
     }
-    // Otherwise continue to matrix multiplication!
-    precondition(lhs.shape.count == 2 && rhs.shape.count == 2, "Tensor lhs \(lhs.shape) and Tensor rhs \(rhs.shape) not compatible for matrix multiplication, both Tensor's must have 2 dimensions")
-    precondition(lhs.shape[1] == rhs.shape[0], "Matrix lhs \(lhs.shape) and Matrix rhs \(rhs.shape) not compatible for matrix multiplication")
+    // Convert row vectors to 2D
+    var lhs_shape = lhs.shape
+    var rhs_shape = rhs.shape
+    if lhs.shape.count == 1 {
+        lhs_shape.insert(1, at: 0)
+    }
+    if rhs.shape.count == 1 {
+        rhs_shape.insert(1, at: 0)
+    }
+    // Continue to matrix multiplication!
+    precondition(lhs_shape.count == 2 && rhs_shape.count == 2, "Tensor lhs \(lhs.shape) and Tensor rhs \(rhs.shape) not compatible for matrix multiplication")
+    precondition(lhs_shape[1] == rhs_shape[0], "Matrix lhs \(lhs.shape) and Matrix rhs \(rhs.shape) not compatible for matrix multiplication")
     var t: Tensor
-    if lhs.shape[0] == 1 && rhs.shape[1] == 1 {
-        t = Tensor(shape: [], repeating: 0)
-        lhs.grid.withUnsafeBufferPointer { lhsPtr in
-            rhs.grid.withUnsafeBufferPointer { rhsPtr in
-                t.grid.withUnsafeMutableBufferPointer { tPtr in
-                    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, Int32(lhs.shape[0]), Int32(rhs.shape[1]), Int32(lhs.shape[1]), 1, lhsPtr.baseAddress!, Int32(lhs.shape[1]), rhsPtr.baseAddress!, Int32(rhs.shape[1]), 0, tPtr.baseAddress!, Int32(1))
-                }
-            }
-        }
-    } else {
-        t = Tensor(shape: [lhs.shape[0], rhs.shape[1]], repeating: 0)
-        lhs.grid.withUnsafeBufferPointer { lhsPtr in
-            rhs.grid.withUnsafeBufferPointer { rhsPtr in
-                t.grid.withUnsafeMutableBufferPointer { tPtr in
-                    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, Int32(lhs.shape[0]), Int32(rhs.shape[1]), Int32(lhs.shape[1]), 1, lhsPtr.baseAddress!, Int32(lhs.shape[1]), rhsPtr.baseAddress!, Int32(rhs.shape[1]), 0, tPtr.baseAddress!, Int32(t.shape[1]))
-                }
+    t = Tensor(shape: [lhs_shape[0], rhs_shape[1]], repeating: 0)
+    lhs.grid.withUnsafeBufferPointer { lhsPtr in
+        rhs.grid.withUnsafeBufferPointer { rhsPtr in
+            t.grid.withUnsafeMutableBufferPointer { tPtr in
+                cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, Int32(lhs_shape[0]), Int32(rhs_shape[1]), Int32(lhs_shape[1]), 1, lhsPtr.baseAddress!, Int32(lhs_shape[1]), rhsPtr.baseAddress!, Int32(rhs_shape[1]), 0, tPtr.baseAddress!, Int32(t.shape[1]))
             }
         }
     }
@@ -743,30 +739,35 @@ extension Tensor {
         return result
     }
     public func sumDiag() -> Double {
+        let (_, reshaped) = extra()
         var result = 0.0
         grid.withUnsafeBufferPointer { gridPtr in
-            vDSP_sveD(gridPtr.baseAddress!, shape[1] + 1, &result, vDSP_Length(Swift.min(shape[0], shape[1])))
+            vDSP_sveD(gridPtr.baseAddress!, reshaped[1] + 1, &result, vDSP_Length(Swift.min(reshaped[0], reshaped[1])))
         }
         return result
     }
     public func sum(axis: Int, keepDim: Bool = false) -> Tensor {
+        var newShape = shape
+        // Keeping dimensions
+        if keepDim { newShape[axis] = 1 } else { newShape.remove(at: axis) }
+        // Check for summing 1 size axis
+        if shape[axis] == 1 { return Tensor(shape: newShape, grid: grid) }
         precondition(axis < shape.count, "Axis not present in this tensor")
-        if shape.count == 1 {
-            return Tensor(shape: keepDim ? shape: [], grid: [self.sum()])
-        } else if shape.count == 2 {
-            var newShape = shape
-            if keepDim { newShape[axis] = 1 } else { newShape.remove(at: axis) }
-            if (axis == 0 && shape[axis] == 1) || (axis == 1 && shape[axis] == 1) { return Tensor(shape: newShape, grid: grid) }
+        // Remove extra shape
+        let (_, reshaped) = extra()
+        if reshaped.count == 1 {
+            return Tensor(shape: newShape, grid: [self.sum()])
+        } else if reshaped.count == 2 {
             var t = Tensor(shape: newShape, repeating: 0)
             grid.withUnsafeBufferPointer { gridPtr in
                 t.grid.withUnsafeMutableBufferPointer { tPtr in
                     if axis == 0 {
-                        for a in 0..<shape[1] {
-                            vDSP_sveD(gridPtr.baseAddress! + a, shape[1], tPtr.baseAddress! + a, vDSP_Length(shape[0]))
+                        for a in 0..<reshaped[1] {
+                            vDSP_sveD(gridPtr.baseAddress! + a, reshaped[1], tPtr.baseAddress! + a, vDSP_Length(reshaped[0]))
                         }
                     } else {
-                        for a in 0..<shape[0] {
-                            vDSP_sveD(gridPtr.baseAddress! + a * shape[1], 1, tPtr.baseAddress! + a, vDSP_Length(shape[1]))
+                        for a in 0..<reshaped[0] {
+                            vDSP_sveD(gridPtr.baseAddress! + a * reshaped[1], 1, tPtr.baseAddress! + a, vDSP_Length(reshaped[1]))
                         }
                     }
                 }
@@ -797,21 +798,24 @@ extension Tensor {
 //            return t
         }
     }
+    // Calculates mean and std for each column!
     public func zscore() -> (norm: Tensor, mean: Tensor, std: Tensor) {
+        let (leftover, reshaped) = extra()
         var t = self
-        var mean = Tensor(shape: [1, shape[1]], repeating: 0)
-        var std = Tensor(shape: [1, shape[1]], repeating: 0)
+        var mean = Tensor(shape: [1, reshaped[1]], repeating: 0)
+        var std = Tensor(shape: [1, reshaped[1]], repeating: 0)
         mean.grid.withUnsafeMutableBufferPointer { meanPtr in
             std.grid.withUnsafeMutableBufferPointer { stdPtr in
-                for c in 0..<shape[1] {
+                for c in 0..<reshaped[1] {
                     t.grid.withUnsafeMutableBufferPointer { tPtr in
                         grid.withUnsafeBufferPointer { gridPtr in
-                            vDSP_normalizeD(gridPtr.baseAddress! + c, shape[1], tPtr.baseAddress! + c, shape[1], meanPtr.baseAddress! + c, stdPtr.baseAddress! + c, vDSP_Length(shape[0]))
+                            vDSP_normalizeD(gridPtr.baseAddress! + c, reshaped[1], tPtr.baseAddress! + c, reshaped[1], meanPtr.baseAddress! + c, stdPtr.baseAddress! + c, vDSP_Length(reshaped[0]))
                         }
                     }
                 }
             }
         }
+        t.shape.insert(contentsOf: leftover.view, at: 0)
         return (t, mean, std)
     }
 }
@@ -875,32 +879,46 @@ extension Tensor {
         return shape.reduce(1) { $0 * $1 }
     }
     public var type: TensorType {
-        func rev(_ i: Int) -> Int {
-            return shape.count - i - 1
-        }
-        if shape.count == 0 || shape.allSatisfy({ $0 == 1 }) {
+        let (_, reshaped) = extra()
+        if reshaped.count == 0 {
             return .scalar
-        } else if shape.count >= 1 && shape[rev(0)] != 1 && shape.prefix(upTo: rev(0)).allSatisfy({ $0 == 1 }) {
-            // Definetley a row vector
+        } else if reshaped.count == 1 {
             return .row
-        } else if shape.count >= 2 && shape[rev(0)] == 1 && shape[rev(1)] != 1 && shape.prefix(upTo: rev(1)).allSatisfy({ $0 == 1 }) {
-            // Definetley a column vector
-            return .column
-        } else if shape.count >= 2 && shape[rev(0)] != 1 && shape[rev(1)] == 1 && shape.prefix(upTo: rev(1)).allSatisfy({ $0 == 1 }) {
-            // Definetley a row vector
-            return .row
-        } else if shape.count >= 2 && shape[rev(1)...rev(0)].allSatisfy({ $0 != 1 }) && shape.prefix(upTo: rev(1)).allSatisfy({ $0 == 1 }) {
-            // Definetely a matrix
+        } else if reshaped.count == 2 {
+            if reshaped[1] == 1 {
+                return .column
+            }
             return .matrix
-        } else if shape.count >= 3 && shape[rev(2)] != 1 && shape.prefix(upTo: rev(2)).allSatisfy({ $0 == 1 }) {
-            // Definetely a 3Dtensor
+        } else if reshaped.count == 3 {
             return .tensor3D
-        } else if shape.count >= 4 && shape[rev(3)] != 1 && shape.prefix(upTo: rev(3)).allSatisfy({ $0 == 1 }) {
-            // Definetely a NDtensor
+        } else if reshaped.count >= 4 {
             return .tensorND
-        } else {
-            fatalError("Unable to describe your tensor")
         }
+        fatalError("Unable to descibe Tensor")
+    }
+    public func extra() -> (leftover: TensorArrayView<Int>, reshaped: TensorArrayView<Int>) {
+        var t = 0
+        // Should rarely ever even run so shouldnt really hinder performance
+        while t < shape.count && shape[t] == 1 {
+            t += 1
+        }
+        // ArraySlice so we arent making unnecessary copies performance
+        return (TensorArrayView<Int>(shape.prefix(upTo: t)), TensorArrayView<Int>(shape.suffix(from: t)))
+    }
+}
+public struct TensorArrayView<T> {
+    public var view: ArraySlice<T>
+    public var count: Int {
+        return view.count
+    }
+    
+    public subscript(i: Int) -> T {
+        precondition(view.startIndex + i < view.endIndex, "Index out of ArrayView bounds")
+        return view[view.startIndex + i]
+    }
+    
+    public init(_ slice: ArraySlice<T>) {
+        self.view = slice
     }
 }
 
