@@ -100,6 +100,13 @@ final class SML2TensorTests: XCTestCase {
         XCTAssert(tensor[mat: 0] == Tensor(arr_two), "query matrix of 3D-Tensor")
         tensor[mat: 1] = Tensor(arr_two)
         XCTAssert(tensor[mat: 1] == Tensor(arr_two), "query set matrix of 3D-Tensor")
+        
+        let arr_three_1 = arr_three.map { $0.map { $0.map { -1.35 + $0 } } }
+        let arr_four = [arr_three, arr_three_1]
+        tensor = Tensor(arr_four)
+        XCTAssert(tensor[t3D: 1] == Tensor(arr_three_1), "query 3D-Tensor of 4D-Tensor")
+        tensor[t3D: 1] = Tensor(arr_three.map { $0.map { $0.map { -1.95 + $0 } } })
+        XCTAssert(tensor[t3D: 1] == Tensor(arr_three.map { $0.map { $0.map { -1.95 + $0 } } }), "query set 3D-Tensor of 4D-Tensor")
     }
     
     func testRandomInit() throws {
@@ -381,6 +388,85 @@ final class SML2TensorTests: XCTestCase {
         
         tensor1 = Tensor([[1, 2, 3, 4]])
         XCTAssert(tensor1.transpose() == Tensor([[1], [2], [3], [4]]), "transpose matrix")
+    }
+    
+    func testConvolve2DAndPad() throws {
+        var image: Tensor
+        var kernel: Tensor
+        
+        image = Tensor([[1, 2, 3, 4, 5], [1, 2, 3, 4, 5], [1, 2, 3, 4, 5], [1, 2, 3, 4, 5], [1, 2, 3, 4, 5]])
+        kernel = Tensor([[1, 2, 1], [2, 1, 2], [1, 2, 1]])
+        
+        var t = image.conv2D(with: kernel)
+        XCTAssert(t == Tensor(shape: [5, 5], grid: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), "convolve2D plain vDSP")
+        
+        t = image.conv2D_valid(with: kernel)
+        XCTAssert(t == Tensor(shape: [3, 3], grid: [26.0, 39.0, 52.0, 26.0, 39.0, 52.0, 26.0, 39.0, 52.0]), "convolve2D valid")
+        
+        image = Tensor(shape: [4, 4], repeating: 4)
+        t = image.conv2D_same(with: kernel)
+        XCTAssert(t == Tensor([[24.0, 36.0, 36.0, 24.0], [36.0, 52.0, 52.0, 36.0], [36.0, 52.0, 52.0, 36.0], [24.0, 36.0, 36.0, 24.0]]), "convolve2D full")
+        
+        t = image.conv2D_full(with: kernel)
+        XCTAssert(t == Tensor([[4.0, 12.0, 16.0, 16.0, 12.0, 4.0], [12.0, 24.0, 36.0, 36.0, 24.0, 12.0], [16.0, 36.0, 52.0, 52.0, 36.0, 16.0], [16.0, 36.0, 52.0, 52.0, 36.0, 16.0], [12.0, 24.0, 36.0, 36.0, 24.0, 12.0], [4.0, 12.0, 16.0, 16.0, 12.0, 4.0]]))
+        
+        // Reset image
+        image = Tensor([[1, 2, 3, 4, 5], [1, 2, 3, 4, 5], [1, 2, 3, 4, 5], [1, 2, 3, 4, 5], [1, 2, 3, 4, 5]])
+        // Add extra shape for extra shape testing
+        image.shape.insert(1, at: 0)
+        t = image.conv2D(with: kernel)
+        XCTAssert(t == Tensor(shape: [1, 5, 5], grid: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), "convolve2D  plain vDSP with extra shape")
+        t.shape.remove(at: 0)
+        
+        t = t.pad(1, 1)
+        XCTAssert(t == Tensor(shape: [7, 7], grid: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), "increase padding of image")
+        t = t.trim(2, 2)
+        XCTAssert(t == Tensor(shape: [3, 3], grid: [26.0, 39.0, 52.0, 26.0, 39.0, 52.0, 26.0, 39.0, 52.0]), "decrease padding of image")
+        
+        t.shape.insert(1, at: 0)
+        t = t.pad(2, 2)
+        XCTAssert(t == Tensor(shape: [1, 7, 7], grid: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), "increase padding of image")
+        t = t.trim(2, 2)
+        XCTAssert(t == Tensor(shape: [1, 3, 3], grid: [26.0, 39.0, 52.0, 26.0, 39.0, 52.0, 26.0, 39.0, 52.0]), "decrease padding of image")
+        t.shape.remove(at: 0)
+
+        t = t.pad(1, 2)
+        XCTAssert(t == Tensor(shape: [5, 7], grid: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), "increase padding to non symmetrical image")
+        t = t.trim(1, 2)
+        XCTAssert(t == Tensor(shape: [3, 3], grid: [26.0, 39.0, 52.0, 26.0, 39.0, 52.0, 26.0, 39.0, 52.0]), "decrease padding of non symmetrical image")
+    }
+    
+    func testRot180() throws {
+        var tensor: Tensor
+        
+        tensor = Tensor([[1, 1, 1], [2, 2, 2], [3, 3, 3]])
+        XCTAssert(tensor.rot180() == Tensor([[3, 3, 3], [2, 2, 2], [1, 1, 1]]), "rot 180")
+        
+        tensor = Tensor([[1, 1, 1], [2, 2, 2], [3, 3, 3]])
+        tensor.shape.insert(1, at: 0)
+        XCTAssert(tensor.rot180() == Tensor(shape: [1, 3, 3], grid: [3, 3, 3, 2, 2, 2, 1, 1, 1]), "rot 180 with extra shape")
+    }
+    
+    func testArrayView() throws {
+        var tensor: Tensor
+        
+        tensor = Tensor(shape: [2, 4, 5, 6, 5], repeating: 0.0)
+        var (_, tensor_reshaped) = tensor.extra()
+        XCTAssert(tensor_reshaped[0] == 2, "index for array view")
+        XCTAssert(tensor_reshaped[1] == 4, "index for array view")
+        XCTAssert(tensor_reshaped[2] == 5, "index for array view")
+        XCTAssert(Array(tensor_reshaped[1..<3]) == [4, 5], "range for array view")
+        XCTAssert(Array(tensor_reshaped[1...3]) == [4, 5, 6], "range for array view")
+        XCTAssert(Array(tensor_reshaped[1..<5]) == [4, 5, 6, 5], "range for array view")
+        
+        tensor = Tensor(shape: [1, 2, 4, 5, 6, 5], repeating: 0.0)
+        (_, tensor_reshaped) = tensor.extra()
+        XCTAssert(tensor_reshaped[0] == 2, "index for array view with extra shape")
+        XCTAssert(tensor_reshaped[1] == 4, "index for array view with extra shape")
+        XCTAssert(tensor_reshaped[2] == 5, "index for array view with extra shape")
+        XCTAssert(Array(tensor_reshaped[1..<3]) == [4, 5], "range for array view with extra shape")
+        XCTAssert(Array(tensor_reshaped[1...3]) == [4, 5, 6], "range for array view with extra shape")
+        XCTAssert(Array(tensor_reshaped[1..<5]) == [4, 5, 6, 5], "range for array view with extra shape")
     }
     
     func testType() throws {
