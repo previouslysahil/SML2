@@ -422,9 +422,9 @@ final class SML2NeuralTests: XCTestCase {
         var data = [[Double]]()
         for i in 0..<3000 {
             let val = Double(i) / 100.0
-            if val <= 10.0 {
+            if val < 10.0 {
                 data.append([Double.random(in: 0..<10.0)])
-            } else if val > 10.0 && val <= 20.0 {
+            } else if val >= 10.0 && val < 20.0 {
                 data.append([Double.random(in: 10.0..<20.0)])
             } else {
                 data.append([Double.random(in: 20.0...30.0)])
@@ -537,21 +537,20 @@ final class SML2NeuralTests: XCTestCase {
     
     func testConvLayer() throws {
         let dt1 = Tensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]])
-        // let conv = Conv2D(size: [2, 3, 3])
         let conv1 = Conv2D(to: 2, out: 1, size: 3)
+        
         let dt2 = Tensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]])
-        // let conv = Conv2D(size: [2, 2, 3, 3])
         let conv2 = Conv2D(to: 2, out: 2, size: 3)
-        let dt3 = Tensor([[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]])
-        // let conv = Conv2D(size: [3, 3])
+        
+        let dt3 = Tensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]])
         let conv3 = Conv2D(to: 1, out: 1, size: 3)
+        
         let dt4 = Tensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]])
-        // let conv = Conv2D(size: [4, 3, 3])
         let conv4 = Conv2D(to: 1, out: 4, size: 3)
         
         let DT = [dt1, dt2, dt3, dt4]
         let CONV = [conv1, conv2, conv3, conv4]
-        let SHAPE = [[3, 3], [2, 3, 3], [3, 3], [4, 3, 3]]
+        let SHAPE = [[1, 3, 3], [2, 3, 3], [1, 3, 3], [4, 3, 3]]
         
         var i = 0
         // grad check for each convolution type variation
@@ -572,42 +571,23 @@ final class SML2NeuralTests: XCTestCase {
             func loss(_ data: Tensor, _ kernel: Tensor, _ bias: Tensor) -> Double {
                 var out: Tensor?
                 // Check for multiple kernels
-                if kernel.shape.main.count == 4 && data.shape.main.count == 3 && kernel.shape.main[1] == data.shape.main[0] {
+                if kernel.shape.count == 4 && data.shape.count == 3 && kernel.shape[1] == data.shape[0] {
                     // Multiple kernels with depth > 1
                     let kernel1 = kernel[t3D: 0]
                     var first = data[mat: 0].conv2D(with: kernel1[mat: 0], type: .valid)
-                    for m in 1..<kernel.shape.main[1] {
+                    for m in 1..<kernel.shape[1] {
                         first = first + data[mat: m].conv2D(with: kernel1[mat: m], type: .valid)
                     }
-                    out = Tensor(shape: [kernel.shape.main[0], first.shape.main[0], first.shape.main[1]], repeating: 0.0)
+                    out = Tensor(shape: [kernel.shape[0], first.shape[0], first.shape[1]], repeating: 0.0)
                     out![mat: 0] = first + bias[0]
-                    for d in 1..<kernel.shape.main[0] {
+                    for d in 1..<kernel.shape[0] {
                         let kernelD = kernel[t3D: d]
                         out![mat: d] = data[mat: 0].conv2D(with: kernelD[mat: 0], type: .valid)
-                        for m in 1..<kernel.shape.main[1] {
+                        for m in 1..<kernel.shape[1] {
                             out![mat: d] = out![mat: d] + data[mat: m].conv2D(with: kernelD[mat: m], type: .valid)
                         }
                         out![mat: d] = out![mat: d] + bias[d]
                     }
-                } else if kernel.shape.main.count == 3 && data.shape.main.count == 3 && kernel.shape.main[0] == data.shape.main[0] {
-                    // One kernel with depth > 1
-                    // Get the first depths convolution so we can also get the shape
-                    out = data[mat: 0].conv2D(with: kernel[mat: 0], type: .valid)
-                    for m in 1..<kernel.shape.main[0] {
-                        out = out! + data[mat: m].conv2D(with: kernel[mat: m], type: .valid)
-                    }
-                    out = out! + bias[0]
-                } else if kernel.shape.main.count == 3 && data.shape.main.count == 2 {
-                    // Multiple kernels with depth 1
-                    let first = data.conv2D(with: kernel[mat: 0], type: .valid)
-                    out = Tensor(shape: [kernel.shape.main[0], first.shape.main[0], first.shape.main[1]], repeating: 0.0)
-                    out![mat: 0] = first + bias[0]
-                    for m in 1..<kernel.shape.main[0] {
-                        out![mat: m] = data.conv2D(with: kernel[mat: m], type: .valid) + bias[m]
-                    }
-                } else if kernel.shape.main.count == 2 && data.shape.main.count == 2 {
-                    // One kernel with depth 1
-                    out = data.conv2D(with: kernel, type: .valid) + bias[0]
                 } else {
                     fatalError("Data and kernels are incompatible")
                 }

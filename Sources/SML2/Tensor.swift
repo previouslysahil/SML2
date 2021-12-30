@@ -4,7 +4,8 @@
 //
 //  Created by Sahil Srivastava on 12/4/21.
 //
-//  IMPORTANT NOTES: 0_0
+//  IMPORTANT NOTES: Querying does not ignore extra shape
+//  all other operations DO ignore extra shape
 //
 //  This Tensor struct is heavily influenced by the Matrix
 //  struct created by Matthijs Hollemans and Mattt Thompson,
@@ -21,7 +22,13 @@ import Foundation
 import Accelerate
 
 public struct Tensor: Equatable {
-    public var shape: Shape
+    public var shape: Shape {
+        didSet {
+            if shape.reduce() != grid.count {
+                fatalError()
+            }
+        }
+    }
     public var grid: [Double]
     
     public init(shape: [Int], grid: [Double]) {
@@ -160,73 +167,70 @@ extension Tensor {
     }
     public subscript(t3D d: Int) -> Tensor {
         get {
-            precondition(shape.main.count == 4, "Must be a 4D-Tensor")
-            var t = Tensor(shape: [shape.main[1], shape.main[2], shape.main[3]], repeating: 0)
+            precondition(shape.count == 4, "Must be a 4D-Tensor")
+            var t = Tensor(shape: [shape[1], shape[2], shape[3]], repeating: 0)
             grid.withUnsafeBufferPointer { gridPtr in
                 t.grid.withUnsafeMutableBufferPointer { tPtr in
-                    cblas_dcopy(Int32(shape.main[1] * shape.main[2] * shape.main[3]), gridPtr.baseAddress! + d * (shape.main[1] * shape.main[2] * shape.main[3]), 1, tPtr.baseAddress!, 1)
+                    cblas_dcopy(Int32(shape[1] * shape[2] * shape[3]), gridPtr.baseAddress! + d * (shape[1] * shape[2] * shape[3]), 1, tPtr.baseAddress!, 1)
                 }
             }
-            t.shape.insert(contentsOf: shape.leftover.view, at: 0)
             return t
         }
         set(t) {
-            precondition(shape.main.count == 4, "Must be a 4D-Tensor")
-            precondition(t.shape.main.count == 3 && t.shape.main[0] == shape.main[1] && t.shape.main[1] == shape.main[2] && t.shape.main[2] == shape.main[3], "Not compatible tensor dimensions")
+            precondition(shape.count == 4, "Must be a 4D-Tensor")
+            precondition(t.shape.count == 3 && t.shape[0] == shape[1] && t.shape[1] == shape[2] && t.shape[2] == shape[3], "Not compatible tensor dimensions")
             grid.withUnsafeMutableBufferPointer { gridPtr in
                 t.grid.withUnsafeBufferPointer { tPtr in
-                    cblas_dcopy(Int32(shape.main[1] * shape.main[2] * shape.main[3]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + d * (shape.main[1] * shape.main[2] * shape.main[3]), 1)
+                    cblas_dcopy(Int32(shape[1] * shape[2] * shape[3]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + d * (shape[1] * shape[2] * shape[3]), 1)
                 }
             }
         }
     }
     public subscript(mat m: Int) -> Tensor {
         get {
-            precondition(shape.main.count == 3, "Must be a 3D-Tensor")
-            var t = Tensor(shape: [shape.main[1], shape.main[2]], repeating: 0)
+            precondition(shape.count == 3, "Must be a 3D-Tensor")
+            var t = Tensor(shape: [shape[1], shape[2]], repeating: 0)
             grid.withUnsafeBufferPointer { gridPtr in
                 t.grid.withUnsafeMutableBufferPointer { tPtr in
-                    cblas_dcopy(Int32(shape.main[1] * shape.main[2]), gridPtr.baseAddress! + m * (shape.main[1] * shape.main[2]), 1, tPtr.baseAddress!, 1)
+                    cblas_dcopy(Int32(shape[1] * shape[2]), gridPtr.baseAddress! + m * (shape[1] * shape[2]), 1, tPtr.baseAddress!, 1)
                 }
             }
-            t.shape.insert(contentsOf: shape.leftover.view, at: 0)
             return t
         }
         set(t) {
-            precondition(shape.main.count == 3, "Must be a 3D-Tensor")
-            precondition(t.shape.main.count == 2 && t.shape.main[0] == shape.main[1] && t.shape.main[1] == shape.main[2], "Not compatible matrix dimensions")
+            precondition(shape.count == 3, "Must be a 3D-Tensor")
+            precondition(t.shape.count == 2 && t.shape[0] == shape[1] && t.shape[1] == shape[2], "Not compatible matrix dimensions")
             grid.withUnsafeMutableBufferPointer { gridPtr in
                 t.grid.withUnsafeBufferPointer { tPtr in
-                    cblas_dcopy(Int32(shape.main[1] * shape.main[2]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + m * (shape.main[1] * shape.main[2]), 1)
+                    cblas_dcopy(Int32(shape[1] * shape[2]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + m * (shape[1] * shape[2]), 1)
                 }
             }
         }
     }
     public subscript(row r: Int) -> Tensor {
         get {
-            precondition(shape.main.count == 2, "Must be a matrix")
-            var t = Tensor(shape: [1, shape.main[1]], repeating: 0)
+            precondition(shape.count == 2, "Must be a matrix")
+            var t = Tensor(shape: [1, shape[1]], repeating: 0)
             grid.withUnsafeBufferPointer { gridPtr in
                 t.grid.withUnsafeMutableBufferPointer { tPtr in
-                    cblas_dcopy(Int32(shape.main[1]), gridPtr.baseAddress! + r * shape.main[1], 1, tPtr.baseAddress!, 1)
+                    cblas_dcopy(Int32(shape[1]), gridPtr.baseAddress! + r * shape[1], 1, tPtr.baseAddress!, 1)
                 }
             }
-            t.shape.insert(contentsOf: shape.leftover.view, at: 0)
             return t
         }
         set(t) {
-            if t.shape.main.count == 1 && t.shape.main[0] == shape.main[1] {
+            if t.shape.count == 1 && t.shape[0] == shape[1] {
                 grid.withUnsafeMutableBufferPointer { gridPtr in
                     t.grid.withUnsafeBufferPointer { tPtr in
-                        cblas_dcopy(Int32(shape.main[1]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + r * shape.main[1], 1)
+                        cblas_dcopy(Int32(shape[1]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + r * shape[1], 1)
                     }
                 }
             } else {
-                precondition(shape.main.count == 2, "Must be a matrix")
-                precondition(t.shape.main.count == 2 && t.shape.main[0] == 1 && t.shape.main[1] == shape.main[1], "Not compatible vector dimensions")
+                precondition(shape.count == 2, "Must be a matrix")
+                precondition(t.shape.count == 2 && t.shape[0] == 1 && t.shape[1] == shape[1], "Not compatible vector dimensions")
                 grid.withUnsafeMutableBufferPointer { gridPtr in
                     t.grid.withUnsafeBufferPointer { tPtr in
-                        cblas_dcopy(Int32(shape.main[1]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + r * shape.main[1], 1)
+                        cblas_dcopy(Int32(shape[1]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + r * shape[1], 1)
                     }
                 }
             }
@@ -234,15 +238,14 @@ extension Tensor {
     }
     public subscript(rows range: Range<Int>) -> Tensor {
         get {
-            precondition(shape.main.count == 2, "Must be a matrix")
-            precondition(range.lowerBound >= 0 && range.upperBound <= shape.main[0], "Invalid range")
-            var t = Tensor(shape: [(range.upperBound - range.lowerBound), shape.main[1]], repeating: 0)
+            precondition(shape.count == 2, "Must be a matrix")
+            precondition(range.lowerBound >= 0 && range.upperBound <= shape[0], "Invalid range")
+            var t = Tensor(shape: [(range.upperBound - range.lowerBound), shape[1]], repeating: 0)
             grid.withUnsafeBufferPointer { gridPtr in
                 t.grid.withUnsafeMutableBufferPointer { tPtr in
-                    cblas_dcopy(Int32(shape.main[1] * range.count), gridPtr.baseAddress! + range.lowerBound * shape.main[1], 1, tPtr.baseAddress!, 1)
+                    cblas_dcopy(Int32(shape[1] * range.count), gridPtr.baseAddress! + range.lowerBound * shape[1], 1, tPtr.baseAddress!, 1)
                 }
             }
-            t.shape.insert(contentsOf: shape.leftover.view, at: 0)
             return t
         }
     }
@@ -253,33 +256,32 @@ extension Tensor {
     }
     public subscript(col c: Int) -> Tensor {
         get {
-            precondition(shape.main.count == 2, "Must be a matrix")
-            var t = Tensor(shape: [shape.main[0], 1], repeating: 0)
+            precondition(shape.count == 2, "Must be a matrix")
+            var t = Tensor(shape: [shape[0], 1], repeating: 0)
             grid.withUnsafeBufferPointer { gridPtr in
                 t.grid.withUnsafeMutableBufferPointer { tPtr in
-                    cblas_dcopy(Int32(shape.main[0]), gridPtr.baseAddress! + c, Int32(shape.main[1]), tPtr.baseAddress!, 1)
+                    cblas_dcopy(Int32(shape[0]), gridPtr.baseAddress! + c, Int32(shape[1]), tPtr.baseAddress!, 1)
                 }
             }
-            t.shape.insert(contentsOf: shape.leftover.view, at: 0)
             return t
         }
         set(t) {
-            precondition(shape.main.count == 2, "Must be a matrix")
-            precondition(t.shape.main.count == 2 && t.shape.main[1] == 1 && t.shape.main[0] == shape.main[0], "Not compatible vector dimensions")
+            precondition(shape.count == 2, "Must be a matrix")
+            precondition(t.shape.count == 2 && t.shape[1] == 1 && t.shape[0] == shape[0], "Not compatible vector dimensions")
             grid.withUnsafeMutableBufferPointer { gridPtr in
                 t.grid.withUnsafeBufferPointer { tPtr in
-                    cblas_dcopy(Int32(shape.main[0]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + c, Int32(shape.main[1]))
+                    cblas_dcopy(Int32(shape[0]), tPtr.baseAddress!, 1, gridPtr.baseAddress! + c, Int32(shape[1]))
                 }
             }
         }
     }
     public subscript(val v: Int) -> Double {
         get {
-            precondition((shape.main.count == 2 && shape.main[1] == 1) || (shape.main.count == 1), "Must be a vector")
+            precondition((shape.count == 2 && shape[1] == 1) || (shape.count == 2 && shape[0] == 1) || (shape.count == 0), "Must be a vector")
             return grid[v]
         }
         set(t) {
-            precondition((shape.main.count == 2 && shape.main[1] == 1) || (shape.main.count == 1), "Must be a vector")
+            precondition((shape.count == 2 && shape[1] == 1) || (shape.count == 2 && shape[0] == 1) || (shape.count == 0), "Must be a vector")
             grid[v] = t
         }
     }
