@@ -22,13 +22,7 @@ import Foundation
 import Accelerate
 
 public struct Tensor: Equatable {
-    public var shape: Shape {
-        didSet {
-            if shape.reduce() != grid.count {
-                fatalError()
-            }
-        }
-    }
+    public var shape: Shape
     public var grid: [Double]
     
     public init(shape: [Int], grid: [Double]) {
@@ -277,11 +271,11 @@ extension Tensor {
     }
     public subscript(val v: Int) -> Double {
         get {
-            precondition((shape.count == 2 && shape[1] == 1) || (shape.count == 2 && shape[0] == 1) || (shape.count == 0), "Must be a vector")
+            precondition((shape.count == 2 && shape[1] == 1) || (shape.count == 2 && shape[0] == 1) || (shape.count == 1), "Must be a vector")
             return grid[v]
         }
         set(t) {
-            precondition((shape.count == 2 && shape[1] == 1) || (shape.count == 2 && shape[0] == 1) || (shape.count == 0), "Must be a vector")
+            precondition((shape.count == 2 && shape[1] == 1) || (shape.count == 2 && shape[0] == 1) || (shape.count == 1), "Must be a vector")
             grid[v] = t
         }
     }

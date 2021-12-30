@@ -573,28 +573,6 @@ final class SML2NeuralTests: XCTestCase {
             let dataTest = conv.input.out!
             func loss(_ data: Tensor, _ kernel: Tensor, _ bias: Tensor) -> Double {
                 var out: Tensor?
-                
-//                if kernel.shape.count == 4 && data.shape.count == 3 && kernel.shape[1] == data.shape[0] {
-//                    // Multiple kernels with depth > 1
-//                    let kernel1 = kernel[t3D: 0]
-//                    var first = data[mat: 0].conv2D(with: kernel1[mat: 0], type: pad ? .same : .valid)
-//                    for m in 1..<kernel.shape[1] {
-//                        first = first + data[mat: m].conv2D(with: kernel1[mat: m], type: pad ? .same : .valid)
-//                    }
-//                    out = Tensor(shape: [kernel.shape[0], first.shape[0], first.shape[1]], repeating: 0.0)
-//                    out![mat: 0] = first + bias[0]
-//                    for d in 1..<kernel.shape[0] {
-//                        let kernelD = kernel[t3D: d]
-//                        out![mat: d] = data[mat: 0].conv2D(with: kernelD[mat: 0], type: pad ? .same : .valid)
-//                        for m in 1..<kernel.shape[1] {
-//                            out![mat: d] = out![mat: d] + data[mat: m].conv2D(with: kernelD[mat: m], type: pad ? .same : .valid)
-//                        }
-//                        out![mat: d] = out![mat: d] + bias[d]
-//                    }
-//                } else {
-//                    fatalError("Data and kernels are incompatible")
-//                }
-//                return out!.sum()
                 if kernel.shape.count == 4 && data.shape.count == 3 && kernel.shape[1] == data.shape[0] {
                     // First get the shape of our 2D Tensor after convolution
                     let mat_shape = pad ? Array(data.shape[1...2]).pad_shape((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid) : Array(data.shape[1...2]).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid)
@@ -678,13 +656,39 @@ final class SML2NeuralTests: XCTestCase {
             i += 1
         }
     }
+    
+    func testBundle() throws {
+        let train_file: (images: String, labels: String) = ("train-images-idx3-ubyte", "train-labels-idx1-ubyte")
+//        let test_file: (images: String, labels: String) = ("t10k-images-idx3-ubyte", "t10k-labels-idx1-ubyte")
+        
+        let train_url: (images: URL, labels: URL) = (Bundle.module.url(forResource: train_file.images, withExtension: nil)!, Bundle.module.url(forResource: train_file.labels, withExtension: nil)!)
+//        let test_url: (images: URL, labels: URL) = (Bundle.module.url(forResource: test_file.images, withExtension: nil)!, Bundle.module.url(forResource: test_file.labels, withExtension: nil)!)
+        
+        let train_data: (images: Data, labels: Data) = (try! Data(contentsOf: train_url.images), try! Data(contentsOf: train_url.labels))
+//        let test_data: (images: Data, labels: Data) = (try! Data(contentsOf: test_url.images), try! Data(contentsOf: test_url.labels))
+        
+        let train_bytes: (images: [UInt8], labels: [UInt8]) = ([UInt8](train_data.images), [UInt8](train_data.labels))
+//        let test_bytes: (images: [UInt8], labels: [UInt8]) = ([UInt8](test_data.images), [UInt8](test_data.labels))
+//        print(train_bytes.images[0..<4], train_bytes.images[4..<8], train_bytes.images[8..<12], train_bytes.images[12..<16])
+        
+        let train_images = Tensor(shape: [60000, 28, 28], grid: Array(train_bytes.images[16..<train_bytes.images.count]).map { Double($0) })
+        let labs: [[Double]] = Array(train_bytes.labels[8..<train_bytes.labels.count]).map {
+            var arr = Array(repeating: 0.0, count: 10)
+            arr[Int($0)] = 1.0
+            return arr
+        }
+        let train_labels = Tensor(shape: [60000, 10], grid: labs.flatMap { $0 })
+        let ex = 35982
+        print(train_labels[row: ex].grid)
+        for i in stride(from: 0, to: train_images[mat: ex].count, by: train_images[mat: ex].shape[1]) {
+            print(train_images[mat: ex].grid[i..<i + train_images[mat: ex].shape[1]])
+        }
+    }
 }
 
 /*
  vDSP_imgfir is doing a mathematically correct convolution operation (it rotates kernel before running), WE WANT CROSS CORRELATION (maybe gradients are wrong check kernel rot 180, passing gradient check tho?)
  Convolution layer take entire dataset as input?
- Make convolution kernel shapes always 4D, and data shape always 3D to simplify if statements
- Tensor struct can now handle extra shapes, make extra() happen in tensor init so we don't constanlty have to call? shouldn't really hinder performance since we call literally everywhere
  SumAxis for 3 >= tensors does not work
  Add custom print for tensor
  Test batchnorm layer is correct with 'hand' calculated gradients (already kinda did this but maybe confirm? maybe also do batchnorm the longer way?)

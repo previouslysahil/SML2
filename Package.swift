@@ -23,6 +23,6 @@ let package = Package(
             dependencies: [], swiftSettings: [.unsafeFlags(["-enable-testing"])]),
         .testTarget(
             name: "SML2Tests",
-            dependencies: ["SML2"]),
+            dependencies: ["SML2"], resources: [.copy("t10k-images-idx3-ubyte"), .copy("t10k-labels-idx1-ubyte"), .copy("train-images-idx3-ubyte"), .copy("train-labels-idx1-ubyte")]),
     ]
 )
