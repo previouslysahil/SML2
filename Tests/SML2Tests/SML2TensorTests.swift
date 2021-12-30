@@ -451,22 +451,20 @@ final class SML2TensorTests: XCTestCase {
         var tensor: Tensor
         
         tensor = Tensor(shape: [2, 4, 5, 6, 5], repeating: 0.0)
-        var (_, tensor_reshaped) = tensor.extra()
-        XCTAssert(tensor_reshaped[0] == 2, "index for array view")
-        XCTAssert(tensor_reshaped[1] == 4, "index for array view")
-        XCTAssert(tensor_reshaped[2] == 5, "index for array view")
-        XCTAssert(Array(tensor_reshaped[1..<3]) == [4, 5], "range for array view")
-        XCTAssert(Array(tensor_reshaped[1...3]) == [4, 5, 6], "range for array view")
-        XCTAssert(Array(tensor_reshaped[1..<5]) == [4, 5, 6, 5], "range for array view")
+        XCTAssert(tensor.shape.main[0] == 2, "index for array view")
+        XCTAssert(tensor.shape.main[1] == 4, "index for array view")
+        XCTAssert(tensor.shape.main[2] == 5, "index for array view")
+        XCTAssert(Array(tensor.shape.main[1..<3]) == [4, 5], "range for array view")
+        XCTAssert(Array(tensor.shape.main[1...3]) == [4, 5, 6], "range for array view")
+        XCTAssert(Array(tensor.shape.main[1..<5]) == [4, 5, 6, 5], "range for array view")
         
         tensor = Tensor(shape: [1, 2, 4, 5, 6, 5], repeating: 0.0)
-        (_, tensor_reshaped) = tensor.extra()
-        XCTAssert(tensor_reshaped[0] == 2, "index for array view with extra shape")
-        XCTAssert(tensor_reshaped[1] == 4, "index for array view with extra shape")
-        XCTAssert(tensor_reshaped[2] == 5, "index for array view with extra shape")
-        XCTAssert(Array(tensor_reshaped[1..<3]) == [4, 5], "range for array view with extra shape")
-        XCTAssert(Array(tensor_reshaped[1...3]) == [4, 5, 6], "range for array view with extra shape")
-        XCTAssert(Array(tensor_reshaped[1..<5]) == [4, 5, 6, 5], "range for array view with extra shape")
+        XCTAssert(tensor.shape.main[0] == 2, "index for array view with extra shape")
+        XCTAssert(tensor.shape.main[1] == 4, "index for array view with extra shape")
+        XCTAssert(tensor.shape.main[2] == 5, "index for array view with extra shape")
+        XCTAssert(Array(tensor.shape.main[1..<3]) == [4, 5], "range for array view with extra shape")
+        XCTAssert(Array(tensor.shape.main[1...3]) == [4, 5, 6], "range for array view with extra shape")
+        XCTAssert(Array(tensor.shape.main[1..<5]) == [4, 5, 6, 5], "range for array view with extra shape")
     }
     
     func testType() throws {
@@ -509,9 +507,12 @@ final class SML2TensorTests: XCTestCase {
         XCTAssert(tensor1.type == .tensor3D)
         
         tensor1 = Tensor(shape: [1, 1, 2, 2, 2, 4], grid: [1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4])
-        XCTAssert(tensor1.type == .tensorND)
+        XCTAssert(tensor1.type == .tensor4D)
         
         tensor1 = Tensor(shape: [1, 1, 2, 2, 1, 4], grid: [1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4])
+        XCTAssert(tensor1.type == .tensor4D)
+        
+        tensor1 = Tensor(shape: [1, 2, 2, 2, 1, 4], grid: [1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4])
         XCTAssert(tensor1.type == .tensorND)
     }
 }

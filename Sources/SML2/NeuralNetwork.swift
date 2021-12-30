@@ -339,53 +339,50 @@ public final class Conv2D: Layer {
         let data = inputs[0].out!
         let kernel = inputs[1].out!
         let bias = inputs[2].out!
-        // True shapes for convolution
-        let (_, data_reshaped) = data.extra()
-        let (_, kernel_reshaped) = kernel.extra()
         // Check for multiple kernels
-        if kernel_reshaped.count == 4 && data_reshaped.count == 3 && kernel_reshaped[1] == data_reshaped[0] {
+        if kernel.shape.main.count == 4 && data.shape.main.count == 3 && kernel.shape.main[1] == data.shape.main[0] {
             // Multiple kernels with depth > 1
             // First get the shape of our 2D Tensor after convolution
-            let (_, mat_reshaped) = Array(data_reshaped[1...2]).conv2D_shape(with: Array(kernel_reshaped[2...3]), type: .valid).extra()
+            let (_, mat_reshaped) = Array(data.shape.main[1...2]).conv2D_shape(with: Array(kernel.shape.main[2...3]), type: .valid).seperate()
             // Now we can make the out shape using the 2D Tensor (matrix) with a depth of the number of kernels since out must have the same depth as the number of kernels
-            out = Tensor(shape: [kernel_reshaped[0], mat_reshaped[0], mat_reshaped[1]], repeating: 0.0)
+            out = Tensor(shape: [kernel.shape.main[0], mat_reshaped[0], mat_reshaped[1]], repeating: 0.0)
             // Now for each kernel we convolve with our data to produce our dth depth for out
-            for d in 0..<kernel_reshaped[0] {
+            for d in 0..<kernel.shape.main[0] {
                 // Get the dth kernel
                 let kernelD = kernel[t3D: d]
                 // Now convolve this kernel with our data, since both kernel and data are 3D Tensors we convolve the corresponding depth of data with that of kernelD
-                for m in 0..<kernel_reshaped[1] {
+                for m in 0..<kernel.shape.main[1] {
                     out![mat: d] = out![mat: d] + data[mat: m].conv2D(with: kernelD[mat: m], type: .valid)
                 }
                 // Add the bias for the dth depth of out which corresponds to the dth kernel
                 out![mat: d] = out![mat: d] + bias[d]
             }
             // For more clarity, this is essentially the following forward calculation (One kernel with depth > 1) except we have multiple kernels that contribute to out so we need to do convolutions for each kernel with data which will produce a new depth for out (making out a multi depth output)
-        } else if kernel_reshaped.count == 3 && data_reshaped.count == 3 && kernel_reshaped[0] == data_reshaped[0] {
+        } else if kernel.shape.main.count == 3 && data.shape.main.count == 3 && kernel.shape.main[0] == data.shape.main[0] {
             // One kernel with depth > 1
             // First get the shape of our 2D Tensor after convolution
-            let (_, mat_reshaped) = Array(data_reshaped[1...2]).conv2D_shape(with: Array(kernel_reshaped[1...2]), type: .valid).extra()
+            let (_, mat_reshaped) = Array(data.shape.main[1...2]).conv2D_shape(with: Array(kernel.shape.main[1...2]), type: .valid).seperate()
             // Now we can make the out shape using the 2D Tensor (matrix), since we only have one kernel out only has a depth of 1 which we can omit making out 2D instead of 3D
             out = Tensor(shape: [mat_reshaped[0], mat_reshaped[1]], repeating: 0.0)
             // Now convolve this kernel with our data, since both kernel and data are 3D Tensors we convolve the corresponding depth of data with that of the kernel
-            for m in 0..<kernel_reshaped[0] {
+            for m in 0..<kernel.shape.main[0] {
                 out = out! + data[mat: m].conv2D(with: kernel[mat: m], type: .valid)
             }
             // Add the singular bias unit since we have only one kernel
             out = out! + bias[0]
-        } else if kernel_reshaped.count == 3 && data_reshaped.count == 2 {
+        } else if kernel.shape.main.count == 3 && data.shape.main.count == 2 {
             // Multiple kernels with depth 1
             // First get the shape of our 2D Tensor after convolution
-            let (_, mat_reshaped) = data.shape.conv2D_shape(with: Array(kernel_reshaped[1...2]), type: .valid).extra()
+            let (_, mat_reshaped) = Array(data.shape.main[0...1]).conv2D_shape(with: Array(kernel.shape.main[1...2]), type: .valid).seperate()
             // Now we can make the out shape using the 2D Tensor (matrix) with a depth of the number of kernels since out must have the same depth as the number of kernels
-            out = Tensor(shape: [kernel_reshaped[0], mat_reshaped[0], mat_reshaped[1]], repeating: 0.0)
+            out = Tensor(shape: [kernel.shape.main[0], mat_reshaped[0], mat_reshaped[1]], repeating: 0.0)
             // Now we convolve each depth of out with each depth of our kernel to get our final out
-            for m in 0..<kernel_reshaped[0] {
+            for m in 0..<kernel.shape.main[0] {
                 // Each mth depth of out corresponds to each kernel and has its own bias
                 out![mat: m] = data.conv2D(with: kernel[mat: m], type: .valid) + bias[m]
             }
             // For more clarity, this is essentially the following forward calculation (One kernel with depth 1) except we have multiple kernels that contribute to out so we need to do convolutions for each kernel with data which will produce a new depth for out (making out a multi depth output)
-        } else if kernel_reshaped.count == 2 && data_reshaped.count == 2 {
+        } else if kernel.shape.main.count == 2 && data.shape.main.count == 2 {
             // One kernel with depth 1
             // Out only has one depth so we only convolve for this depth and omit the extra shape, making out a 2D Tensor
             out = data.conv2D(with: kernel, type: .valid) + bias[0]
@@ -403,21 +400,18 @@ public final class Conv2D: Layer {
         var gradData: Tensor
         var gradKernel: Tensor
         var gradBias: Tensor
-        // True shapes for convolution
-        let (_, data_reshaped) = data.extra()
-        let (_, kernel_reshaped) = kernel.extra()
         // Get grad for data, kernel, and bias (valid) SHOULD ROTATE KERNEL 180
         // Check for multiple kernels
-        if kernel_reshaped.count == 4 && data_reshaped.count == 3 && kernel_reshaped[1] == data_reshaped[0] {
+        if kernel.shape.main.count == 4 && data.shape.main.count == 3 && kernel.shape.main[1] == data.shape.main[0] {
             // Multiple kernels with depth > 1
             
             // *** GRADDATA ***
             // gradData should be the same shape as our data
             gradData = Tensor(shape: data.shape, repeating: 0.0)
             // Each depth of gradData is influenced by every kernel that was convoluted over data so we must convolve each depth of dOut with the corresponding depth of each kernel
-            for d in 0..<kernel_reshaped[0] {
+            for d in 0..<kernel.shape.main[0] {
                 // For each kernel we are adding, its mth depth convolved with the respective dth dOut that is influenced by this kernel, with the respective gradData mth depth
-                for m in 0..<kernel_reshaped[1] {
+                for m in 0..<kernel.shape.main[1] {
                     // Each kernel only influences a single depth of dOut, but each depth of the kernel influences each depth of gradData, leading to this syntax
                     gradData[mat: m] = gradData[mat: m] + kernel[t3D: d][mat: m].conv2D(with: dOut![mat: d], type: .full)
                 }
@@ -428,9 +422,9 @@ public final class Conv2D: Layer {
             // gradKernel should be the same shape as our kernels tensor
             gradKernel = Tensor(shape: kernel.shape, repeating: 0)
             // Now we calculate the influence of each kernel
-            for d in 0..<kernel_reshaped[0] {
+            for d in 0..<kernel.shape.main[0] {
                 // For a single kernel its mth depths influence is found by the convolution with the mth depth of the data (since this depth only convolves with the respective data mth depth) and the dOut depth d that corresponds to this kernel (since each kernel only influences on depth of dOut)
-                for m in 0..<kernel_reshaped[1] {
+                for m in 0..<kernel.shape.main[1] {
                     // Here we are finding the partial derivative for the mth depth of kernel d
                     gradKernel[t3D: d][mat: m] = data[mat: m].conv2D(with: dOut![mat: d], type: .valid)
                 }
@@ -440,17 +434,17 @@ public final class Conv2D: Layer {
             // *** GRADBIAS ***
             gradBias = bias
             // Do you realy need an explanation?
-            for d in 0..<kernel_reshaped[0] {
+            for d in 0..<kernel.shape.main[0] {
                 gradBias[d] = dOut![mat: d].sum()
             }
-        } else if kernel_reshaped.count == 3 && data_reshaped.count == 3 && kernel_reshaped[0] == data_reshaped[0] {
+        } else if kernel.shape.main.count == 3 && data.shape.main.count == 3 && kernel.shape.main[0] == data.shape.main[0] {
             // One kernel with depth > 1
             
             // *** GRADDATA ***
             // gradData should be the same shape as our data
             gradData = Tensor(shape: data.shape, repeating: 0.0)
             // We are adding this kernels mth depth with the respective gradData depth
-            for m in 0..<kernel_reshaped[0] {
+            for m in 0..<kernel.shape.main[0] {
                 // dOut is a 2D Tensor here since we only have one kernel
                 gradData[mat: m] = kernel[mat: m].conv2D(with: dOut!, type: .full)
             }
@@ -459,7 +453,7 @@ public final class Conv2D: Layer {
             // gradKernel should be the same shape as our kernels tensor
             gradKernel = Tensor(shape: kernel.shape, repeating: 0)
             // To calculate the influence of this kernel we find the influence of each of mth depth
-            for m in 0..<kernel_reshaped[0] {
+            for m in 0..<kernel.shape.main[0] {
                 // Since dOut is a 2D Matrix (we only have one kernel) we convolve each depth of data with this dOut to get the partial of each depth of the kernel (since the kernel's mth depth only interacts with data's mth depth)
                 gradKernel[mat: m] = data[mat: m].conv2D(with: dOut!, type: .valid)
             }
@@ -468,14 +462,14 @@ public final class Conv2D: Layer {
             gradBias = bias
             // If you got the last this is easier...
             gradBias[0] = dOut!.sum()
-        } else if kernel_reshaped.count == 3 && data_reshaped.count == 2 {
+        } else if kernel.shape.main.count == 3 && data.shape.main.count == 2 {
             // Multiple kernels with depth 1
             
             // *** GRADDATA ***
             // gradData should be the same shape as our data
             gradData = Tensor(shape: data.shape, repeating: 0.0)
             // Since we have multiple kernels we need to add their partials to gradData
-            for m in 0..<kernel_reshaped[0] {
+            for m in 0..<kernel.shape.main[0] {
                 // gradData is influenced by kernel and the corresponding dOout that the kernels convolution with data created
                 gradData = gradData + kernel[mat: m].conv2D(with: dOut![mat: m], type: .full)
             }
@@ -485,7 +479,7 @@ public final class Conv2D: Layer {
             // gradKernel should be the same shape as our kernels tensor
             gradKernel = Tensor(shape: kernel.shape, repeating: 0.0)
             // Each kernels partial is made with convolving with the respective mth depth dOut!
-            for m in 0..<kernel_reshaped[0] {
+            for m in 0..<kernel.shape.main[0] {
                 // Since each depth of dOut is influenced by a single kernel we convolve data with this mth dOut depth to get the partial of this mth kernel
                 gradKernel[mat: m] = data.conv2D(with: dOut![mat: m], type: .valid)
             }
@@ -494,10 +488,10 @@ public final class Conv2D: Layer {
             // *** GRADBIAS ***
             gradBias = bias
             // Pretty simple too! just think!
-            for d in 0..<kernel_reshaped[0] {
+            for d in 0..<kernel.shape.main[0] {
                 gradBias[d] = dOut![mat: d].sum()
             }
-        } else if kernel_reshaped.count == 2 && data_reshaped.count == 2 {
+        } else if kernel.shape.main.count == 2 && data.shape.main.count == 2 {
             // One kernel with depth 1
             
             // *** GRADDATA ***

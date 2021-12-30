@@ -571,45 +571,41 @@ final class SML2NeuralTests: XCTestCase {
             let dataTest = conv.input.out!
             func loss(_ data: Tensor, _ kernel: Tensor, _ bias: Tensor) -> Double {
                 var out: Tensor?
-                let (_, data_reshaped) = data.extra()
-                let (_, kernel_reshaped) = kernel.extra()
                 // Check for multiple kernels
-                if kernel_reshaped.count == 4 && data_reshaped.count == 3 && kernel_reshaped[1] == data_reshaped[0] {
+                if kernel.shape.main.count == 4 && data.shape.main.count == 3 && kernel.shape.main[1] == data.shape.main[0] {
                     // Multiple kernels with depth > 1
                     let kernel1 = kernel[t3D: 0]
                     var first = data[mat: 0].conv2D(with: kernel1[mat: 0], type: .valid)
-                    let (_, first_reshaped) = first.extra()
-                    for m in 1..<kernel_reshaped[1] {
+                    for m in 1..<kernel.shape.main[1] {
                         first = first + data[mat: m].conv2D(with: kernel1[mat: m], type: .valid)
                     }
-                    out = Tensor(shape: [kernel_reshaped[0], first_reshaped[0], first_reshaped[1]], repeating: 0.0)
+                    out = Tensor(shape: [kernel.shape.main[0], first.shape.main[0], first.shape.main[1]], repeating: 0.0)
                     out![mat: 0] = first + bias[0]
-                    for d in 1..<kernel_reshaped[0] {
+                    for d in 1..<kernel.shape.main[0] {
                         let kernelD = kernel[t3D: d]
                         out![mat: d] = data[mat: 0].conv2D(with: kernelD[mat: 0], type: .valid)
-                        for m in 1..<kernel_reshaped[1] {
+                        for m in 1..<kernel.shape.main[1] {
                             out![mat: d] = out![mat: d] + data[mat: m].conv2D(with: kernelD[mat: m], type: .valid)
                         }
                         out![mat: d] = out![mat: d] + bias[d]
                     }
-                } else if kernel_reshaped.count == 3 && data_reshaped.count == 3 && kernel_reshaped[0] == data_reshaped[0] {
+                } else if kernel.shape.main.count == 3 && data.shape.main.count == 3 && kernel.shape.main[0] == data.shape.main[0] {
                     // One kernel with depth > 1
                     // Get the first depths convolution so we can also get the shape
                     out = data[mat: 0].conv2D(with: kernel[mat: 0], type: .valid)
-                    for m in 1..<kernel_reshaped[0] {
+                    for m in 1..<kernel.shape.main[0] {
                         out = out! + data[mat: m].conv2D(with: kernel[mat: m], type: .valid)
                     }
                     out = out! + bias[0]
-                } else if kernel_reshaped.count == 3 && data_reshaped.count == 2 {
+                } else if kernel.shape.main.count == 3 && data.shape.main.count == 2 {
                     // Multiple kernels with depth 1
                     let first = data.conv2D(with: kernel[mat: 0], type: .valid)
-                    let (_, first_reshaped) = first.extra()
-                    out = Tensor(shape: [kernel_reshaped[0], first_reshaped[0], first_reshaped[1]], repeating: 0.0)
+                    out = Tensor(shape: [kernel.shape.main[0], first.shape.main[0], first.shape.main[1]], repeating: 0.0)
                     out![mat: 0] = first + bias[0]
-                    for m in 1..<kernel_reshaped[0] {
+                    for m in 1..<kernel.shape.main[0] {
                         out![mat: m] = data.conv2D(with: kernel[mat: m], type: .valid) + bias[m]
                     }
-                } else if kernel_reshaped.count == 2 && data_reshaped.count == 2 {
+                } else if kernel.shape.main.count == 2 && data.shape.main.count == 2 {
                     // One kernel with depth 1
                     out = data.conv2D(with: kernel, type: .valid) + bias[0]
                 } else {
@@ -683,7 +679,7 @@ final class SML2NeuralTests: XCTestCase {
 /*
  vDSP_imgfir is doing a mathematically correct convolution operation (it rotates kernel before running), WE WANT CROSS CORRELATION (maybe gradients are wrong check kernel rot 180, passing gradient check tho?)
  Convolution layer take entire dataset as input?
- Extra shape calcs for conv2D in tensor kinda funky (see conv_valid,same,full) we remove extra shape before true conv so true convs insert extra shape never actually would insert extra shape
+ Make convolution kernel shapes always 4D, and data shape always 3D to simplify if statements
  Tensor struct can now handle extra shapes, make extra() happen in tensor init so we don't constanlty have to call? shouldn't really hinder performance since we call literally everywhere
  SumAxis for 3 >= tensors does not work
  Add custom print for tensor
