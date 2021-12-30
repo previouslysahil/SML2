@@ -536,21 +536,24 @@ final class SML2NeuralTests: XCTestCase {
     }
     
     func testConvLayer() throws {
+        var pad = false
+        pad = false
+        
         let dt1 = Tensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]])
-        let conv1 = Conv2D(to: 2, out: 1, size: 3)
+        let conv1 = Conv2D(to: 2, out: 1, size: 3, pad: pad)
         
         let dt2 = Tensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]])
-        let conv2 = Conv2D(to: 2, out: 2, size: 3)
+        let conv2 = Conv2D(to: 2, out: 2, size: 3, pad: pad)
         
         let dt3 = Tensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]])
-        let conv3 = Conv2D(to: 1, out: 1, size: 3)
+        let conv3 = Conv2D(to: 1, out: 1, size: 3, pad: pad)
         
         let dt4 = Tensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]])
-        let conv4 = Conv2D(to: 1, out: 4, size: 3)
+        let conv4 = Conv2D(to: 1, out: 4, size: 3, pad: pad)
         
         let DT = [dt1, dt2, dt3, dt4]
         let CONV = [conv1, conv2, conv3, conv4]
-        let SHAPE = [[1, 3, 3], [2, 3, 3], [1, 3, 3], [4, 3, 3]]
+        let SHAPE: [[Int]] = pad ? [[1, 5, 5], [2, 5, 5], [1, 5, 5], [4, 5, 5]] : [[1, 3, 3], [2, 3, 3], [1, 3, 3], [4, 3, 3]]
         
         var i = 0
         // grad check for each convolution type variation
@@ -570,24 +573,45 @@ final class SML2NeuralTests: XCTestCase {
             let dataTest = conv.input.out!
             func loss(_ data: Tensor, _ kernel: Tensor, _ bias: Tensor) -> Double {
                 var out: Tensor?
-                // Check for multiple kernels
+                
+//                if kernel.shape.count == 4 && data.shape.count == 3 && kernel.shape[1] == data.shape[0] {
+//                    // Multiple kernels with depth > 1
+//                    let kernel1 = kernel[t3D: 0]
+//                    var first = data[mat: 0].conv2D(with: kernel1[mat: 0], type: pad ? .same : .valid)
+//                    for m in 1..<kernel.shape[1] {
+//                        first = first + data[mat: m].conv2D(with: kernel1[mat: m], type: pad ? .same : .valid)
+//                    }
+//                    out = Tensor(shape: [kernel.shape[0], first.shape[0], first.shape[1]], repeating: 0.0)
+//                    out![mat: 0] = first + bias[0]
+//                    for d in 1..<kernel.shape[0] {
+//                        let kernelD = kernel[t3D: d]
+//                        out![mat: d] = data[mat: 0].conv2D(with: kernelD[mat: 0], type: pad ? .same : .valid)
+//                        for m in 1..<kernel.shape[1] {
+//                            out![mat: d] = out![mat: d] + data[mat: m].conv2D(with: kernelD[mat: m], type: pad ? .same : .valid)
+//                        }
+//                        out![mat: d] = out![mat: d] + bias[d]
+//                    }
+//                } else {
+//                    fatalError("Data and kernels are incompatible")
+//                }
+//                return out!.sum()
                 if kernel.shape.count == 4 && data.shape.count == 3 && kernel.shape[1] == data.shape[0] {
-                    // Multiple kernels with depth > 1
-                    let kernel1 = kernel[t3D: 0]
-                    var first = data[mat: 0].conv2D(with: kernel1[mat: 0], type: .valid)
-                    for m in 1..<kernel.shape[1] {
-                        first = first + data[mat: m].conv2D(with: kernel1[mat: m], type: .valid)
-                    }
-                    out = Tensor(shape: [kernel.shape[0], first.shape[0], first.shape[1]], repeating: 0.0)
-                    out![mat: 0] = first + bias[0]
-                    for d in 1..<kernel.shape[0] {
+                    // First get the shape of our 2D Tensor after convolution
+                    let mat_shape = pad ? Array(data.shape[1...2]).pad_shape((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid) : Array(data.shape[1...2]).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid)
+                    // Now we can make the out shape using the 2D Tensor (matrix) with a depth of the number of kernels since out must have the same depth as the number of kernels
+                    out = Tensor(shape: [kernel.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
+                    // Now for each kernel we convolve with our data to produce our dth depth for out
+                    for d in 0..<kernel.shape[0] {
+                        // Get the dth kernel
                         let kernelD = kernel[t3D: d]
-                        out![mat: d] = data[mat: 0].conv2D(with: kernelD[mat: 0], type: .valid)
-                        for m in 1..<kernel.shape[1] {
-                            out![mat: d] = out![mat: d] + data[mat: m].conv2D(with: kernelD[mat: m], type: .valid)
+                        // Now convolve this kernel with our data, since both kernel and data are 3D Tensors we convolve the corresponding depth of data with that of kernelD
+                        for m in 0..<kernel.shape[1] {
+                            out![mat: d] = pad ? out![mat: d] + data[mat: m].pad((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D(with: kernelD[mat: m], type: .valid) : out![mat: d] + data[mat: m].conv2D(with: kernelD[mat: m], type: .valid)
                         }
+                        // Add the bias for the dth depth of out which corresponds to the dth kernel
                         out![mat: d] = out![mat: d] + bias[d]
                     }
+                    // For more clarity, this is essentially the following forward calculation (One kernel with depth > 1) except we have multiple kernels that contribute to out so we need to do convolutions for each kernel with data which will produce a new depth for out (making out a multi depth output)
                 } else {
                     fatalError("Data and kernels are incompatible")
                 }

@@ -337,7 +337,8 @@ public final class Conv2D: Layer {
         // Convolve!
         if kernel.shape.count == 4 && data.shape.count == 3 && kernel.shape[1] == data.shape[0] {
             // First get the shape of our 2D Tensor after convolution
-            let mat_shape = Array(data.shape[1...2]).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid)
+            // pad to make shape a same convolution if we have padding
+            let mat_shape = pad ? Array(data.shape[1...2]).pad_shape((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid) : Array(data.shape[1...2]).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid)
             // Now we can make the out shape using the 2D Tensor (matrix) with a depth of the number of kernels since out must have the same depth as the number of kernels
             out = Tensor(shape: [kernel.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
             // Now for each kernel we convolve with our data to produce our dth depth for out
@@ -346,7 +347,8 @@ public final class Conv2D: Layer {
                 let kernelD = kernel[t3D: d]
                 // Now convolve this kernel with our data, since both kernel and data are 3D Tensors we convolve the corresponding depth of data with that of kernelD
                 for m in 0..<kernel.shape[1] {
-                    out![mat: d] = out![mat: d] + data[mat: m].conv2D(with: kernelD[mat: m], type: .valid)
+                    // pad to make same convolution if we have padding
+                    out![mat: d] = pad ? out![mat: d] + data[mat: m].pad((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D(with: kernelD[mat: m], type: .valid) : out![mat: d] + data[mat: m].conv2D(with: kernelD[mat: m], type: .valid)
                 }
                 // Add the bias for the dth depth of out which corresponds to the dth kernel
                 out![mat: d] = out![mat: d] + bias[d]
@@ -377,7 +379,8 @@ public final class Conv2D: Layer {
                 // For each kernel we are adding, its mth depth convolved with the respective dth dOut that is influenced by this kernel, with the respective gradData mth depth
                 for m in 0..<kernel.shape[1] {
                     // Each kernel only influences a single depth of dOut, but each depth of the kernel influences each depth of gradData, leading to this syntax
-                    gradData[mat: m] = gradData[mat: m] + kernel[t3D: d][mat: m].conv2D(with: dOut![mat: d], type: .full)
+                    // trim gradData since padded areas dont contribute to gradient if we have padding
+                    gradData[mat: m] = pad ? gradData[mat: m] + kernel[t3D: d][mat: m].conv2D(with: dOut![mat: d], type: .full).trim((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2) : gradData[mat: m] + kernel[t3D: d][mat: m].conv2D(with: dOut![mat: d], type: .full)
                 }
             }
             // For more clarity look at the previous github commit
@@ -390,7 +393,8 @@ public final class Conv2D: Layer {
                 // For a single kernel its mth depths influence is found by the convolution with the mth depth of the data (since this depth only convolves with the respective data mth depth) and the dOut depth d that corresponds to this kernel (since each kernel only influences on depth of dOut)
                 for m in 0..<kernel.shape[1] {
                     // Here we are finding the partial derivative for the mth depth of kernel d
-                    gradKernel[t3D: d][mat: m] = data[mat: m].conv2D(with: dOut![mat: d], type: .valid)
+                    // pad data just as we pad in forward if we have padding
+                    gradKernel[t3D: d][mat: m] = pad ? data[mat: m].pad((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D(with: dOut![mat: d], type: .valid) : data[mat: m].conv2D(with: dOut![mat: d], type: .valid)
                 }
             }
             // For more clarity look at the previous github commit
