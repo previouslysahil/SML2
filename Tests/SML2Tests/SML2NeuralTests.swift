@@ -650,11 +650,280 @@ final class SML2NeuralTests: XCTestCase {
             // Makes sure that our hand computed linear results and our linear layers results are identical
 //            print(outTest, out)
             XCTAssert(conv.out!.shape == SHAPE[i], "convolution shape output")
-            XCTAssert(abs(outTest - out.grid.first!) < eps, "hand written linear out vs linear layer out")
+            XCTAssert(abs(outTest - out.grid.first!) < eps, "hand written conv out vs linear conv out")
 //            print(grads[conv.input]!.shape, conv.input.out!.shape, grads[conv.kernel]!.shape, conv.kernel.out!.shape, grads[conv.bias]!.shape, conv.bias.out!.shape)
             XCTAssert(grads[conv.input]!.shape == conv.input.out!.shape && grads[conv.kernel]!.shape == conv.kernel.out!.shape && grads[conv.bias]!.shape == conv.bias.out!.shape)
             i += 1
         }
+    }
+    
+    func testConvLayerBatch() throws {
+        var pad = false
+        pad = false
+        
+        let dt11: [[[Double]]] = [[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]]
+        let dt12 = dt11.map { $0.map { $0.map { $0 + 394 } } }
+        let dt1 = Tensor([dt11, dt12])
+        let conv1 = Conv2D(to: 2, out: 1, size: 3, pad: pad)
+        
+        let dt21: [[[Double]]] = [[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]]
+        let dt22 = dt21.map { $0.map { $0.map { $0 + 58 } } }
+        let dt2 = Tensor([dt21, dt22])
+        let conv2 = Conv2D(to: 2, out: 2, size: 3, pad: pad)
+        
+        let dt31: [[[Double]]] = [[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]]
+        let dt32 = dt31.map { $0.map { $0.map { $0 + 23 } } }
+        let dt3 = Tensor([dt31, dt32])
+        let conv3 = Conv2D(to: 1, out: 1, size: 3, pad: pad)
+        
+        let dt41: [[[Double]]] = [[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]]
+        let dt42 = dt41.map { $0.map { $0.map { $0 + 21 } } }
+        let dt4 = Tensor([dt41, dt42])
+        let conv4 = Conv2D(to: 1, out: 4, size: 3, pad: pad)
+        
+        let DT = [dt1, dt2, dt3, dt4]
+        let CONV = [conv1, conv2, conv3, conv4]
+        let SHAPE: [[Int]] = pad ? [[2, 1, 5, 5], [2, 2, 5, 5], [2, 1, 5, 5], [2, 4, 5, 5]] : [[2, 1, 3, 3], [2, 2, 3, 3], [2, 1, 3, 3], [2, 4, 3, 3]]
+        
+        var i = 0
+        // grad check for each convolution type variation
+        for (dt, conv) in zip(DT, CONV) {
+            let J = conv.sum()
+            let session = Session(parallel: parallel)
+            session.build(J)
+            session.pass([conv.input: dt])
+            let (out, grads) = session.run(J)
+//            print("----------\n", out)
+//            print(grads[J] ?? "NIL", grads[conv.input] ?? "NIL", grads[conv.kernel] ?? "NIL")
+            
+            // NOW LETS TEST IF THIS LAYER IS CORRECT BY DOING IT BY 'HAND'
+            // Kernel init'd randomly so this makes sure they are the same random vals for both weight matrices
+            let kernelTest = conv.kernel.out!
+            let biasTest = conv.bias.out!
+            let dataTest = conv.input.out!
+            func loss(_ data: Tensor, _ kernel: Tensor, _ bias: Tensor) -> Double {
+                var out: Tensor?
+                if kernel.shape.count == 4 && data.shape.count == 3 && kernel.shape[1] == data.shape[0] {
+                    // First get the shape of our 2D Tensor after convolution
+                    let mat_shape = pad ? Array(data.shape[1...2]).pad_shape((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid) : Array(data.shape[1...2]).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid)
+                    // Now we can make the out shape using the 2D Tensor (matrix) with a depth of the number of kernels since out must have the same depth as the number of kernels
+                    out = Tensor(shape: [kernel.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
+                    // Now for each kernel we convolve with our data to produce our dth depth for out
+                    for d in 0..<kernel.shape[0] {
+                        // Get the dth kernel
+                        let kernelD = kernel[t3D: d]
+                        // Now convolve this kernel with our data, since both kernel and data are 3D Tensors we convolve the corresponding depth of data with that of kernelD
+                        for m in 0..<kernel.shape[1] {
+                            out![mat: d] = pad ? out![mat: d] + data[mat: m].pad((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D(with: kernelD[mat: m], type: .valid) : out![mat: d] + data[mat: m].conv2D(with: kernelD[mat: m], type: .valid)
+                        }
+                        // Add the bias for the dth depth of out which corresponds to the dth kernel
+                        out![mat: d] = out![mat: d] + bias[d]
+                    }
+                    // For more clarity, this is essentially the following forward calculation (One kernel with depth > 1) except we have multiple kernels that contribute to out so we need to do convolutions for each kernel with data which will produce a new depth for out (making out a multi depth output)
+                } else if kernel.shape.count == 4 && data.shape.count == 4 && kernel.shape[1] == data.shape[1] {
+                    // First get the shape of our 2D Tensor after convolution
+                    // pad to make shape a same convolution if we have padding
+                    let mat_shape = pad ? Array(data.shape[2...3]).pad_shape((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid) : Array(data.shape[2...3]).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid)
+                    // Now we can make the out shape using the 2D Tensor (matrix) with a depth of the number of kernels since out must have the same depth as the number of kernels and a count of the number of input images since we are outting the same number of images
+                    out = Tensor(shape: [data.shape[0], kernel.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
+                    // Now for each image we do a convolution
+                    for n in 0..<data.shape[0] {
+                        // Now for each kernel we convolve with our data to produce our dth depth for out
+                        for d in 0..<kernel.shape[0] {
+                            // Get the dth kernel
+                            let kernelD = kernel[t3D: d]
+                            // Now convolve this kernel with our data, since both kernel and data are 3D Tensors we convolve the corresponding depth of data with that of kernelD
+                            for m in 0..<kernel.shape[1] {
+                                // pad to make same convolution if we have padding
+                                out![t3D: n][mat: d] = pad ? out![t3D: n][mat: d] + data[t3D: n][mat: m].pad((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D(with: kernelD[mat: m], type: .valid) : out![t3D: n][mat: d] + data[t3D: n][mat: m].conv2D(with: kernelD[mat: m], type: .valid)
+                            }
+                            // Add the bias for the dth depth of out which corresponds to the dth kernel
+                            out![t3D: n][mat: d] = out![t3D: n][mat: d] + bias[d]
+                        }
+                    }
+                } else {
+                    fatalError("Data and kernels are incompatible")
+                }
+                return out!.sum()
+            }
+            let outTest = loss(dataTest, kernelTest, biasTest)
+            // Test data
+            func get_grad_data_numericals(_ pos_data: Tensor, _ neg_data: Tensor, idx: Int) {
+                let grad_data_numerical = (loss(pos_data, kernelTest, biasTest) - loss(neg_data, kernelTest, biasTest)) / (2.0 * eps)
+                
+                let diff_data = abs(grads[conv.input]!.grid[idx] - grad_data_numerical) / max(abs(grads[conv.input]!.grid[idx]), abs(grad_data_numerical))
+//                print(diff_data, idx, "data")
+                XCTAssert(diff_data < bound * 10, "analytical vs numerical gradient check for dataTest")
+            }
+            for i in 0..<dataTest.grid.count {
+                var pos_grid = dataTest.grid
+                pos_grid[i] = pos_grid[i] + eps
+                var neg_grid = dataTest.grid
+                neg_grid[i] = neg_grid[i] - eps
+                let pos_data = Tensor(shape: dataTest.shape, grid: pos_grid)
+                let neg_data = Tensor(shape: dataTest.shape, grid: neg_grid)
+                get_grad_data_numericals(pos_data, neg_data, idx: i)
+            }
+            // Test kernel
+            func get_grad_kernel_numericals(_ pos_kernel: Tensor, _ neg_kernel: Tensor, idx: Int) {
+                let grad_kernel_numerical = (loss(dataTest, pos_kernel, biasTest) - loss(dataTest, neg_kernel, biasTest)) / (2.0 * eps)
+
+                let diff_kernel = abs(grads[conv.kernel]!.grid[idx] - grad_kernel_numerical) / max(abs(grads[conv.kernel]!.grid[idx]), abs(grad_kernel_numerical))
+//                print(diff_kernel, idx, "kernel")
+                XCTAssert(diff_kernel < bound, "analytical vs numerical gradient check for kernelTest")
+            }
+//            print(kernelTest.grid.count)
+            for i in 0..<kernelTest.grid.count {
+                var pos_grid = kernelTest.grid
+                pos_grid[i] = pos_grid[i] + eps
+                var neg_grid = kernelTest.grid
+                neg_grid[i] = neg_grid[i] - eps
+                let pos_kernel = Tensor(shape: kernelTest.shape, grid: pos_grid)
+                let neg_kernel = Tensor(shape: kernelTest.shape, grid: neg_grid)
+                get_grad_kernel_numericals(pos_kernel, neg_kernel, idx: i)
+            }
+            // Test bias
+            func get_grad_bias_numericals(_ pos_bias: Tensor, _ neg_bias: Tensor, idx: Int) {
+                let grad_bias_numerical = (loss(dataTest, kernelTest, pos_bias) - loss(dataTest, kernelTest, neg_bias)) / (2.0 * eps)
+                
+                let diff_bias = abs(grads[conv.bias]!.grid[idx] - grad_bias_numerical) / max(abs(grads[conv.bias]!.grid[idx]), abs(grad_bias_numerical))
+//                print(diff_bias, idx, "bias")
+                XCTAssert(diff_bias < bound, "analytical vs numerical gradient check for biasTest")
+            }
+            for i in 0..<biasTest.grid.count {
+                var pos_grid = biasTest.grid
+                pos_grid[i] = pos_grid[i] + eps
+                var neg_grid = biasTest.grid
+                neg_grid[i] = neg_grid[i] - eps
+                let pos_bias = Tensor(shape: biasTest.shape, grid: pos_grid)
+                let neg_bias = Tensor(shape: biasTest.shape, grid: neg_grid)
+                get_grad_bias_numericals(pos_bias, neg_bias, idx: i)
+            }
+            // Makes sure that our hand computed linear results and our linear layers results are identical
+//            print(outTest, out)
+//            print(conv.out!.shape, SHAPE[i])
+            XCTAssert(conv.out!.shape == SHAPE[i], "convolution shape output")
+            XCTAssert(abs(outTest - out.grid.first!) < eps, "hand written conv out vs conv layer out")
+//            print(grads[conv.input]!.shape, conv.input.out!.shape, grads[conv.kernel]!.shape, conv.kernel.out!.shape, grads[conv.bias]!.shape, conv.bias.out!.shape)
+            XCTAssert(grads[conv.input]!.shape == conv.input.out!.shape && grads[conv.kernel]!.shape == conv.kernel.out!.shape && grads[conv.bias]!.shape == conv.bias.out!.shape)
+            i += 1
+        }
+    }
+    
+    func testPoolLayer() throws {
+        let size = 2
+        // POOL2D IS NOT A STABLE MAX POOLER but does that really matter for gradients? NO, it doesnt
+        // This commneted out contains values that overlap maxes which will cause improper gradient checks since max pool layer is unstable (doesn't really matter because the math still works out)
+//        let dt: [[Double]] = [[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]
+        let dt1: [[Double]] = [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10], [11, 12, 13, 14, 15], [16, 17, 18, 19, 20], [21, 22, 23, 24, 25]]
+        let dt2 = dt1.map { $0.map { $0 + 24 } }
+        // First is just an image with depth 1, second is image with depth 2, third is 2 images with depth 2
+        let ds: [Tensor] = [Tensor([dt1]), Tensor([dt1, dt2]), Tensor([[dt1, dt2], [dt1, dt2].map { $0.map { $0.map { $0 + 392 } } }])]
+        let SHAPES: [Shape] = [Shape([1, 4, 4]), Shape([2, 4, 4]), Shape([2, 2, 4, 4])]
+        for (d, SHAPE) in zip(ds, SHAPES) {
+            let pool = Pool2DMax(size: size)
+            let J = pool.sum()
+            let session = Session(parallel: parallel)
+            session.build(J)
+            session.pass([pool.input: d])
+            let (out, grads) = session.run(J)
+//            print("----------\n", out)
+//            print(grads[J] ?? "NIL", grads[conv.input] ?? "NIL", grads[conv.kernel] ?? "NIL")
+            
+            // Now test
+            let dataTest = pool.input.out!
+            func loss(_ input: Tensor) -> Double {
+                var out: Tensor
+                if input.shape.count == 4 {
+                    // Make empty out same size as input after pool, mat_shape is the shape of a matrix in our tensor
+                    let mat_shape = Array(input.shape[2...3]).pool2D_max_shape(size: size)
+                    // Now we can make the out shape using the 2D Tensor (matrix) with a depth of our input depth since pooling always maintains depth and count of our input count
+                    out = Tensor(shape: [input.shape[0], input.shape[1], mat_shape[0], mat_shape[1]], repeating: 0.0)
+                    // Now for each nth image pool
+                    for n in 0..<input.shape[0] {
+                        // Now pool each depth in the nth image input
+                        for d in 0..<input.shape[1] {
+                            // Pool and get positions for backpropagation
+                            let (pooled, _) = input[t3D: n][mat: d].pool2D_max(size: size)
+                            out[t3D: n][mat: d] = pooled
+                        }
+                    }
+                } else if input.shape.count == 3 {
+                    // Make empty out same size as input after pool, mat_shape is the shape of a matrix in our tensor
+                    let mat_shape = Array(input.shape[1...2]).pool2D_max_shape(size: size)
+                    // Now we can make the out shape using the 2D Tensor (matrix) with a depth of our input depth since pooling always maintains depth
+                    out = Tensor(shape: [input.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
+                    // positions will only have one 2D array
+                    // Now pool each depth in input
+                    for d in 0..<input.shape[0] {
+                        // Pool and get positions for backpropagation
+                        let (pooled, _) = input[mat: d].pool2D_max(size: size)
+                        out[mat: d] = pooled
+                    }
+                } else if input.shape.count == 2 {
+                    // Pool and get positions for backpropagation
+                    let (pooled, _) = input.pool2D_max(size: size)
+                    // Set pooled to be our out
+                    out = pooled
+                } else {
+                    fatalError("Incompatible dimensions for pooling")
+                }
+                return out.sum()
+            }
+            let outTest = loss(dataTest)
+            // Test input
+            func get_grad_data_numericals(_ pos_data: Tensor, _ neg_data: Tensor, idx: Int) {
+                let grad_data_numerical = (loss(pos_data) - loss(neg_data)) / (2.0 * eps)
+                
+                let diff_data = grads[pool.input]!.grid[idx] - grad_data_numerical
+//                print(diff_data, idx, "data")
+                XCTAssert(diff_data < bound, "analytical vs numerical gradient check for dataTest")
+            }
+            for i in 0..<dataTest.grid.count {
+                var pos_grid = dataTest.grid
+                pos_grid[i] = pos_grid[i] + eps
+                var neg_grid = dataTest.grid
+                neg_grid[i] = neg_grid[i] - eps
+                let pos_data = Tensor(shape: dataTest.shape, grid: pos_grid)
+                let neg_data = Tensor(shape: dataTest.shape, grid: neg_grid)
+                get_grad_data_numericals(pos_data, neg_data, idx: i)
+            }
+            XCTAssert(pool.out!.shape == SHAPE)
+            XCTAssert(pool.input.out!.shape == grads[pool.input]!.shape, "input shape same as grad shape")
+            XCTAssert(abs(outTest - out.grid.first!) < eps, "hand written pool out vs pool layer out")
+        }
+    }
+    
+    func testFlatten() throws {
+        let dt1: [[[Double]]] = [[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]]
+        let dt2 = dt1.map { $0.map { $0.map { $0 + 58 } } }
+        
+        let threeD = {
+            let dt = Tensor(dt1)
+            let flatten = Flatten(Variable(dt))
+            flatten.forward()
+            let out = flatten.out!
+            XCTAssert(out.transpose()[row: 0].grid == dt1.flatMap { $0 }.flatMap { $0 }, "flatten correct")
+            
+            flatten.backward(dOut: flatten.out!)
+            let grad = flatten.grads[0]
+            XCTAssert(grad == dt, "flatten backwards correct")
+        }
+        
+        let fourD = {
+            let dt = Tensor([dt1, dt2])
+            let flatten = Flatten(Variable(dt))
+            flatten.forward()
+            let out = flatten.out!
+            XCTAssert(out.transpose()[row: 0].grid == dt1.flatMap { $0 }.flatMap { $0 }, "flatten correct")
+            XCTAssert(out.transpose()[row: 1].grid == dt2.flatMap { $0 }.flatMap { $0 }, "flatten correct")
+            
+            flatten.backward(dOut: flatten.out!)
+            let grad = flatten.grads[0]
+            XCTAssert(grad == dt, "flatten backwards correct")
+        }
+        threeD()
+        fourD()
     }
     
     func testBundle() throws {
@@ -688,9 +957,7 @@ final class SML2NeuralTests: XCTestCase {
 
 /*
  vDSP_imgfir is doing a mathematically correct convolution operation (it rotates kernel before running), WE WANT CROSS CORRELATION (maybe gradients are wrong check kernel rot 180, passing gradient check tho?)
- Convolution layer take entire dataset as input?
  SumAxis for 3 >= tensors does not work
  Add custom print for tensor
  Test batchnorm layer is correct with 'hand' calculated gradients (already kinda did this but maybe confirm? maybe also do batchnorm the longer way?)
- t[cols: range] not implemented
  */

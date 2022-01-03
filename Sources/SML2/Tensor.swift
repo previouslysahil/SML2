@@ -269,6 +269,24 @@ extension Tensor {
             }
         }
     }
+    public subscript(cols range: Range<Int>) -> Tensor {
+        precondition(shape.count == 2, "Must be a matrix")
+        precondition(range.lowerBound >= 0 && range.upperBound <= shape[1], "Invalid range")
+        var t = Tensor(shape: [shape[0], (range.upperBound - range.lowerBound)], repeating: 0)
+        grid.withUnsafeBufferPointer { gridPtr in
+            t.grid.withUnsafeMutableBufferPointer { tPtr in
+                for c in range {
+                    cblas_dcopy(Int32(shape[0]), gridPtr.baseAddress! + c, Int32(shape[1]), tPtr.baseAddress! + c - range.lowerBound, Int32(t.shape[1]))
+                }
+            }
+        }
+        return t
+    }
+    public subscript(cols range: ClosedRange<Int>) -> Tensor {
+        get {
+            self[cols: Range(range)]
+        }
+    }
     public subscript(val v: Int) -> Double {
         get {
             precondition((shape.count == 2 && shape[1] == 1) || (shape.count == 2 && shape[0] == 1) || (shape.count == 1), "Must be a vector")
@@ -424,6 +442,53 @@ extension Tensor {
     public func conv2D_full(with kernel: Tensor) -> Tensor {
         return self.pad(kernel.shape.main[0] - 1, kernel.shape.main[1] - 1).conv2D_valid(with: kernel)
     }
+    // Could be optimized? 10X slower than vDSP_imgfir (conv)
+    public func pool2D_max(size: Int) -> Tensor {
+        var res = Tensor(shape: [shape[0] - size + 1, shape[1] - size + 1], repeating: 0)
+        var idx = 0
+        for r in 0..<shape[0] {
+            if r < shape[0] && r + size <= shape[0] {
+                let pools = self[rows: r..<r + size]
+                for c in 0..<shape[1] {
+                    if c < shape[1] && c + size <= shape[1] {
+                        let pool = pools[cols: c..<c + size]
+                        // Max of pool
+                        res.grid[idx] = pool.max()
+                        idx += 1
+                    }
+                }
+            }
+        }
+        return res
+    }
+    // Could be optimized? 10X slower than vDSP_imgfir (conv)
+    public func pool2D_max(size: Int) -> (Tensor, [Int]) {
+        precondition(shape.main.count == 2 && shape.main[1] != 1, "Image and kernel must be matrices")
+        var res = Tensor(shape: [shape[0] - size + 1, shape[1] - size + 1], repeating: 0)
+        var positions = Array(repeating: 0, count: res.grid.count)
+        var idx = 0
+        for r in 0..<shape[0] {
+            if r < shape[0] && r + size <= shape[0] {
+                let pools = self[rows: r..<r + size]
+                for c in 0..<shape[1] {
+                    if c < shape[1] && c + size <= shape[1] {
+                        let pool = pools[cols: c..<c + size]
+                        // Arg max of pool
+                        let (max, offset) = pool.max()
+                        // Gives us offset for our pool wrt to our main tensor
+                        let (pool_row, pool_col) = (offset / pool.shape[1], offset % pool.shape[1])
+                        res.grid[idx] = max
+                        // Make our true max position based wrt to our main tensor
+                        let pos = (r + pool_row) * shape[1] + (c + pool_col)
+                        // Set this position in our indicies
+                        positions[idx] = pos
+                        idx += 1
+                    }
+                }
+            }
+        }
+        return (res, positions)
+    }
     public func pad(_ w: Int, _ h: Int) -> Tensor {
         precondition(shape.main.count == 2 && shape.main[1] != 1, "Must be a matrix")
         var out = Tensor(shape: [shape.main[0] + 2 * w, shape.main[1] + 2 * h], repeating: 0)
@@ -504,6 +569,11 @@ extension Array where Element == Int {
     public func conv2D_full_shape(with kernel: [Int]) -> [Int] {
         let (_, reshaped_kernel) = kernel.seperate()
         return self.pad_shape(reshaped_kernel[0] - 1, reshaped_kernel[1] - 1).conv2D_valid_shape(with: kernel)
+    }
+    public func pool2D_max_shape(size: Int) -> [Int] {
+        let (_, reshaped) = seperate()
+        precondition(reshaped.count == 2 && reshaped[1] != 1, "Must be a matrix")
+        return [reshaped[0] - size + 1, reshaped[1] - size + 1]
     }
     public func pad_shape(_ w: Int, _ h: Int) -> [Int] {
         let (leftover, reshaped) = seperate()
@@ -900,10 +970,25 @@ extension Tensor {
         }
         return t
     }
+    public func max() -> Double {
+        var result = 0.0
+        grid.withUnsafeBufferPointer { gridPtr in
+            vDSP_maxvD(gridPtr.baseAddress!, 1, &result, vDSP_Length(count))
+        }
+        return result
+    }
+    public func max() -> (Double, Int) {
+        var result = 0.0
+        var idx: UInt = 0
+        grid.withUnsafeBufferPointer { gridPtr in
+            vDSP_maxviD(gridPtr.baseAddress!, 1, &result, &idx, vDSP_Length(count))
+        }
+        return (result, Int(idx))
+    }
     public func sum() -> Double {
         var result = 0.0
-        grid.withUnsafeBufferPointer { src in
-            vDSP_sveD(src.baseAddress!, 1, &result, vDSP_Length(count))
+        grid.withUnsafeBufferPointer { gridPtr in
+            vDSP_sveD(gridPtr.baseAddress!, 1, &result, vDSP_Length(count))
         }
         return result
     }

@@ -109,6 +109,21 @@ final class SML2TensorTests: XCTestCase {
         XCTAssert(tensor[t3D: 1] == Tensor(arr_three.map { $0.map { $0.map { -1.95 + $0 } } }), "query set 3D-Tensor of 4D-Tensor")
     }
     
+    func testQueryRange() throws {
+        var tensor: Tensor
+        tensor = Tensor(shape: [4, 3], grid: [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13])
+        
+        // Column ranges
+        XCTAssert(tensor[cols: 1..<3] == Tensor(shape: [4, 2], grid: [2, 3, 5, 6, 8, 9, 12, 13]), "query columns")
+        XCTAssert(tensor[cols: 0..<2] == Tensor(shape: [4, 2], grid: [1, 2, 4, 5, 7, 8, 11, 12]), "query columns")
+        XCTAssert(tensor[cols: 1..<2] == Tensor(shape: [4, 1], grid: [2, 5, 8, 12]), "query columns")
+        
+        // Row ranges
+        XCTAssert(tensor[rows: 1..<3] == Tensor(shape: [2, 3], grid: [4, 5, 6, 7, 8, 9]), "query rows")
+        XCTAssert(tensor[rows: 0..<2] == Tensor(shape: [2, 3], grid: [1, 2, 3, 4, 5, 6]), "query rows")
+        XCTAssert(tensor[rows: 1..<2] == Tensor(shape: [1, 3], grid: [4, 5, 6]), "query rows")
+    }
+    
     func testRandomInit() throws {
         var tensor: Tensor
         
@@ -434,6 +449,29 @@ final class SML2TensorTests: XCTestCase {
         XCTAssert(t == Tensor(shape: [5, 7], grid: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), "increase padding to non symmetrical image")
         t = t.trim(1, 2)
         XCTAssert(t == Tensor(shape: [3, 3], grid: [26.0, 39.0, 52.0, 26.0, 39.0, 52.0, 26.0, 39.0, 52.0]), "decrease padding of non symmetrical image")
+    }
+    
+    func testMaxPool() throws {
+        var tensor: Tensor
+        tensor = Tensor(shape: [4, 3], grid: [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13])
+        
+        var (res, positions) = tensor.pool2D_max(size: 1)
+        XCTAssert(res == Tensor(shape: [4, 3], grid: [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13]), "Max pools correctly")
+        for (idx, pos) in positions.enumerated() {
+            XCTAssert(tensor.grid[pos] == res.grid[idx], "Max pool calculates max positions wrt to main tensor correctly")
+        }
+        
+        (res, positions) = tensor.pool2D_max(size: 2)
+        XCTAssert(res == Tensor(shape: [3, 2], grid: [5, 6, 8, 9, 12, 13]), "Max pools correctly")
+        for (idx, pos) in positions.enumerated() {
+            XCTAssert(tensor.grid[pos] == res.grid[idx], "Max pool calculates max positions wrt to main tensor correctly")
+        }
+        
+        (res, positions) = tensor.pool2D_max(size: 3)
+        XCTAssert(res == Tensor(shape: [2, 1], grid: [9, 13]), "Max pools correctly")
+        for (idx, pos) in positions.enumerated() {
+            XCTAssert(tensor.grid[pos] == res.grid[idx], "Max pool calculates max positions wrt to main tensor correctly")
+        }
     }
     
     func testRot180() throws {
