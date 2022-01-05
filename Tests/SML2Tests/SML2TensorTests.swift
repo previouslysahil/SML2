@@ -122,6 +122,26 @@ final class SML2TensorTests: XCTestCase {
         XCTAssert(tensor[rows: 1..<3] == Tensor(shape: [2, 3], grid: [4, 5, 6, 7, 8, 9]), "query rows")
         XCTAssert(tensor[rows: 0..<2] == Tensor(shape: [2, 3], grid: [1, 2, 3, 4, 5, 6]), "query rows")
         XCTAssert(tensor[rows: 1..<2] == Tensor(shape: [1, 3], grid: [4, 5, 6]), "query rows")
+        
+        // Mat ranges
+        var t3D = [Double]()
+        for i in 1...60 {
+            t3D.append(Double(i))
+        }
+        tensor = Tensor(shape: [5, 4, 3], grid: t3D)
+        XCTAssert(tensor[mats: 0..<2] == Tensor(shape: [2, 4, 3], grid: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0]), "query mats")
+        XCTAssert(tensor[mats: 2..<3] == Tensor(shape: [1, 4, 3], grid: [25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0]), "query mats")
+        XCTAssert(tensor[mats: 3..<5] == Tensor(shape: [2, 4, 3], grid: [37.0, 38.0, 39.0, 40.0, 41.0, 42.0, 43.0, 44.0, 45.0, 46.0, 47.0, 48.0, 49.0, 50.0, 51.0, 52.0, 53.0, 54.0, 55.0, 56.0, 57.0, 58.0, 59.0, 60.0]), "query mats")
+        
+        // t3D ranges
+        var t4D = [Double]()
+        for i in 1...600 {
+            t4D.append(Double(i))
+        }
+        tensor = Tensor(shape: [10, 5, 4, 3], grid: t4D)
+        XCTAssert(tensor[t3Ds: 0..<2] == Tensor(shape: [2, 5, 4, 3], grid: Array(t4D[60 * 0..<60 * 2])), "query t3D")
+        XCTAssert(tensor[t3Ds: 2..<5] == Tensor(shape: [3, 5, 4, 3], grid: Array(t4D[60 * 2..<60 * 5])), "query t3D")
+        XCTAssert(tensor[t3Ds: 9..<10] == Tensor(shape: [1, 5, 4, 3], grid: Array(t4D[60 * 9..<60 * 10])), "query t3D")
     }
     
     func testRandomInit() throws {
@@ -474,6 +494,17 @@ final class SML2TensorTests: XCTestCase {
         }
     }
     
+//    func testError() throws {
+//        let sef = Tensor(shape: [10, 10], repeating: 1.0)
+//        let kernel = Tensor(shape: [4, 4], repeating: 3.0)
+//        let options = XCTMeasureOptions()
+//        options.iterationCount = 1000
+//        measure(options: options) {
+//            sef.conv2D_mine(with: kernel)
+//        }
+//        print(sef.conv2D(with: kernel, type: .valid).as2D())
+//    }
+    
     func testRot180() throws {
         var tensor: Tensor
         
@@ -503,6 +534,15 @@ final class SML2TensorTests: XCTestCase {
         XCTAssert(Array(tensor.shape.main[1..<3]) == [4, 5], "range for array view with extra shape")
         XCTAssert(Array(tensor.shape.main[1...3]) == [4, 5, 6], "range for array view with extra shape")
         XCTAssert(Array(tensor.shape.main[1..<5]) == [4, 5, 6, 5], "range for array view with extra shape")
+    }
+    
+    func testZscoreImage() throws {
+        var tensor: Tensor
+        
+        tensor = Tensor(shape: [2, 1, 3, 3], grid: [1, 2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+//        print(tensor[t3D: 0])
+        let (norm, mean, std) = tensor.zscore_image()
+        print(norm, (tensor[t3D: 0] - mean) / std, (tensor[t3D: 1] - mean) / std)
     }
     
     func testType() throws {

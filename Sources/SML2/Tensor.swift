@@ -180,6 +180,42 @@ extension Tensor {
             }
         }
     }
+    public subscript(t3Ds range: Range<Int>) -> Tensor {
+        get {
+            precondition(shape.count == 4, "Must be a 4D-Tensor")
+            precondition(range.lowerBound >= 0 && range.upperBound <= shape[0], "Invalid range")
+            var t = Tensor(shape: [(range.upperBound - range.lowerBound), shape[1], shape[2], shape[3]], repeating: 0)
+            grid.withUnsafeBufferPointer { gridPtr in
+                t.grid.withUnsafeMutableBufferPointer { tPtr in
+                    cblas_dcopy(Int32(shape[1] * shape[2] * shape[3] * range.count), gridPtr.baseAddress! + range.lowerBound * (shape[1] * shape[2] * shape[3]), 1, tPtr.baseAddress!, 1)
+                }
+            }
+            return t
+        }
+    }
+    public subscript(t3Ds range: ClosedRange<Int>) -> Tensor {
+        get {
+            self[t3Ds: Range(range)]
+        }
+    }
+    public subscript(mats range: Range<Int>) -> Tensor {
+        get {
+            precondition(shape.count == 3, "Must be a 4D-Tensor")
+            precondition(range.lowerBound >= 0 && range.upperBound <= shape[0], "Invalid range")
+            var t = Tensor(shape: [(range.upperBound - range.lowerBound), shape[1], shape[2]], repeating: 0)
+            grid.withUnsafeBufferPointer { gridPtr in
+                t.grid.withUnsafeMutableBufferPointer { tPtr in
+                    cblas_dcopy(Int32(shape[1] * shape[2] * range.count), gridPtr.baseAddress! + range.lowerBound * (shape[1] * shape[2]), 1, tPtr.baseAddress!, 1)
+                }
+            }
+            return t
+        }
+    }
+    public subscript(mats range: ClosedRange<Int>) -> Tensor {
+        get {
+            self[mats: Range(range)]
+        }
+    }
     public subscript(mat m: Int) -> Tensor {
         get {
             precondition(shape.count == 3, "Must be a 3D-Tensor")
@@ -314,7 +350,7 @@ extension Tensor {
         let lower: Double = -upper
         var uniform = [Double]()
         uniform.reserveCapacity(count)
-        for _ in 0..<count { uniform.append(lower + Double.random(in: 0..<1) * (upper - lower)) }
+        for _ in 0..<count { uniform.append(Double.random(in: lower..<upper)) }
         let t = Tensor(shape: shape, grid: uniform)
         return t
     }
@@ -433,7 +469,29 @@ extension Tensor {
         res.shape.insert(contentsOf: shape.leftover.view, at: 0)
         return res
     }
+    public func conv2D_mine(with kernel: Tensor) -> Tensor {
+        var res = Tensor(shape: [shape.main[0] - kernel.shape.main[0] + 1, shape.main[1] - kernel.shape.main[1] + 1], repeating: 0.0)
+        var idx = 0
+        for r in 0..<shape[0] {
+            if r < shape[0] && r + kernel.shape.main[0] <= shape[0] {
+                let pools = self[rows: r..<r + kernel.shape.main[0]]
+                for c in 0..<shape[1] {
+                    if c < shape[1] && c + kernel.shape.main[1] <= shape[1] {
+                        let pool = pools[cols: c..<c + kernel.shape.main[1]]
+                        // Max of pool
+                        res.grid[idx] = (pool * kernel).sum()
+                        idx += 1
+                    }
+                }
+            }
+        }
+        return res
+    }
     public func conv2D_valid(with kernel: Tensor) -> Tensor {
+        // vDSP_imgfir even kernels wonky behavior....
+        if kernel.shape[0] % 2 == 0 || kernel.shape[1] % 2 == 0 {
+            return conv2D_mine(with: kernel)
+        }
         return self.conv2D(with: kernel).trim((kernel.shape.main[0] - 1) / 2, (kernel.shape.main[1] - 1) / 2)
     }
     public func conv2D_same(with kernel: Tensor) -> Tensor {
@@ -462,15 +520,15 @@ extension Tensor {
         return res
     }
     // Could be optimized? 10X slower than vDSP_imgfir (conv)
-    public func pool2D_max(size: Int) -> (Tensor, [Int]) {
+    public func pool2D_max(size: Int, strd: Int = 1) -> (Tensor, [Int]) {
         precondition(shape.main.count == 2 && shape.main[1] != 1, "Image and kernel must be matrices")
-        var res = Tensor(shape: [shape[0] - size + 1, shape[1] - size + 1], repeating: 0)
+        var res = Tensor(shape: [((shape[0] - size) / strd) + 1, ((shape[1] - size) / strd) + 1], repeating: 0)
         var positions = Array(repeating: 0, count: res.grid.count)
         var idx = 0
-        for r in 0..<shape[0] {
+        for r in stride(from: 0, to: shape[0], by: strd) {
             if r < shape[0] && r + size <= shape[0] {
                 let pools = self[rows: r..<r + size]
-                for c in 0..<shape[1] {
+                for c in stride(from: 0, to: shape[1], by: strd) {
                     if c < shape[1] && c + size <= shape[1] {
                         let pool = pools[cols: c..<c + size]
                         // Arg max of pool
@@ -570,10 +628,10 @@ extension Array where Element == Int {
         let (_, reshaped_kernel) = kernel.seperate()
         return self.pad_shape(reshaped_kernel[0] - 1, reshaped_kernel[1] - 1).conv2D_valid_shape(with: kernel)
     }
-    public func pool2D_max_shape(size: Int) -> [Int] {
+    public func pool2D_max_shape(size: Int, strd: Int = 1) -> [Int] {
         let (_, reshaped) = seperate()
         precondition(reshaped.count == 2 && reshaped[1] != 1, "Must be a matrix")
-        return [reshaped[0] - size + 1, reshaped[1] - size + 1]
+        return [((reshaped[0] - size) / strd) + 1, ((reshaped[1] - size) / strd) + 1]
     }
     public func pad_shape(_ w: Int, _ h: Int) -> [Int] {
         let (leftover, reshaped) = seperate()
@@ -1068,6 +1126,26 @@ extension Tensor {
             }
         }
         t.shape.insert(contentsOf: shape.leftover.view, at: 0)
+        return (t, mean, std)
+    }
+    // Calculates mean and std for each pixel!
+    public func zscore_image() -> (norm: Tensor, mean: Tensor, std: Tensor) {
+        precondition(shape.count == 4, "Incompatible type for zscore image normalization, must be a 4D-Tensor")
+        var t = self
+        var mean = Tensor(shape: [shape[1], shape[2], shape[3]], repeating: 0)
+        var std = Tensor(shape: [shape[1], shape[2], shape[3]], repeating: 0)
+        mean.grid.withUnsafeMutableBufferPointer { meanPtr in
+            std.grid.withUnsafeMutableBufferPointer { stdPtr in
+                let image_size = shape[1] * shape[2] * shape[3]
+                for p in 0..<image_size {
+                    t.grid.withUnsafeMutableBufferPointer { tPtr in
+                        grid.withUnsafeBufferPointer { gridPtr in
+                            vDSP_normalizeD(gridPtr.baseAddress! + p, image_size, tPtr.baseAddress! + p, image_size, meanPtr.baseAddress! + p, stdPtr.baseAddress! + p, vDSP_Length(shape[0]))
+                        }
+                    }
+                }
+            }
+        }
         return (t, mean, std)
     }
 }

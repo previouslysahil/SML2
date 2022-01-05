@@ -26,6 +26,16 @@ public struct Sequence {
         return weights
     }
     
+    public var kernels: [Variable] {
+        var kernels = [Variable]()
+        for layer in layers {
+            if let layer = layer as? Conv2D {
+                kernels.append(layer.kernel)
+            }
+        }
+        return kernels
+    }
+    
     public var regularizer: Variable {
         var reg: Variable? = nil
         for weight in weights {
@@ -33,6 +43,13 @@ public struct Sequence {
                 reg = weight.pow(2).sum()
             } else {
                 reg = reg! + weight.pow(2).sum()
+            }
+        }
+        for kernel in kernels {
+            if reg == nil {
+                reg = kernel.pow(2).sum()
+            } else {
+                reg = reg! + kernel.pow(2).sum()
             }
         }
         return reg!
@@ -320,8 +337,8 @@ public final class Conv2D: Layer {
     
     // Placeholder in case input currently unknown (we haven't fed forward)
     public init(_ input: Variable = Placeholder(), to: Int, out: Int, size: Int, pad: Bool = false, tag: String = "") {
-        // Set kernel shape (maybe different random? xavier?
-        let kernel = Variable(Tensor.random(shape: [out, to, size, size]))
+        // Check if this is really xavier
+        let kernel = Variable(Tensor.random_xavier(shape: [out, to, size, size], ni: size * size * to, no: size * size * out))
         let bias = Variable(Tensor(shape: [out], repeating: 0.01))
         self.pad = pad
         super.init(inputs: [input, kernel, bias], tag: tag)
@@ -483,11 +500,13 @@ public final class Conv2D: Layer {
 public final class Pool2DMax: Layer {
     
     private let size: Int
+    private let stride: Int
     private var n_positions: [[[Int]]]?
     
     // Placeholder in case input currently unknown (we haven't fed forward)
-    public init(_ input: Variable = Placeholder(), size: Int, tag: String = "") {
+    public init(_ input: Variable = Placeholder(), size: Int, stride: Int, tag: String = "") {
         self.size = size
+        self.stride = stride
         super.init(inputs: [input], tag: tag)
         grads = Array(repeating: Tensor(shape: [], grid: []), count: 1)
     }
@@ -498,7 +517,7 @@ public final class Pool2DMax: Layer {
         // Max pool!
         if input.shape.count == 4 {
             // Make empty out same size as input after pool, mat_shape is the shape of a matrix in our tensor
-            let mat_shape = Array(input.shape[2...3]).pool2D_max_shape(size: size)
+            let mat_shape = Array(input.shape[2...3]).pool2D_max_shape(size: size, strd: stride)
             // Now we can make the out shape using the 2D Tensor (matrix) with a depth of our input depth since pooling always maintains depth and count of our input count
             out = Tensor(shape: [input.shape[0], input.shape[1], mat_shape[0], mat_shape[1]], repeating: 0.0)
             // positions will have 2D arrays as long as input count
@@ -508,7 +527,7 @@ public final class Pool2DMax: Layer {
                 // Now pool each depth in the nth image input
                 for d in 0..<input.shape[1] {
                     // Pool and get positions for backpropagation
-                    let (pooled, positions) = input[t3D: n][mat: d].pool2D_max(size: size)
+                    let (pooled, positions) = input[t3D: n][mat: d].pool2D_max(size: size, strd: stride)
                     out![t3D: n][mat: d] = pooled
                     // Cache this depths positions
                     n_positions![n][d] = positions
@@ -516,7 +535,7 @@ public final class Pool2DMax: Layer {
             }
         } else if input.shape.count == 3 {
             // Make empty out same size as input after pool, mat_shape is the shape of a matrix in our tensor
-            let mat_shape = Array(input.shape[1...2]).pool2D_max_shape(size: size)
+            let mat_shape = Array(input.shape[1...2]).pool2D_max_shape(size: size, strd: stride)
             // Now we can make the out shape using the 2D Tensor (matrix) with a depth of our input depth since pooling always maintains depth
             out = Tensor(shape: [input.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
             // positions will only have one 2D array
@@ -524,7 +543,7 @@ public final class Pool2DMax: Layer {
             // Now pool each depth in input
             for d in 0..<input.shape[0] {
                 // Pool and get positions for backpropagation
-                let (pooled, positions) = input[mat: d].pool2D_max(size: size)
+                let (pooled, positions) = input[mat: d].pool2D_max(size: size, strd: stride)
                 out![mat: d] = pooled
                 // Cache this depths position
                 n_positions![0][d] = positions
@@ -666,6 +685,18 @@ public final class Process {
             return norm
         case .pred:
             return (input - mean.transpose()) / std.transpose()
+        }
+    }
+    
+    public func zscore_image(_ input: Tensor, type: ProcessType) -> Tensor {
+        switch type {
+        case .data:
+            let (norm, mean, std) = input.zscore_image()
+            self.mean = mean
+            self.std = std
+            return norm
+        case .pred:
+            return (input - mean) / std
         }
     }
 }

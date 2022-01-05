@@ -821,7 +821,7 @@ final class SML2NeuralTests: XCTestCase {
         let ds: [Tensor] = [Tensor([dt1]), Tensor([dt1, dt2]), Tensor([[dt1, dt2], [dt1, dt2].map { $0.map { $0.map { $0 + 392 } } }])]
         let SHAPES: [Shape] = [Shape([1, 4, 4]), Shape([2, 4, 4]), Shape([2, 2, 4, 4])]
         for (d, SHAPE) in zip(ds, SHAPES) {
-            let pool = Pool2DMax(size: size)
+            let pool = Pool2DMax(size: size, stride: 1)
             let J = pool.sum()
             let session = Session(parallel: parallel)
             session.build(J)
@@ -940,7 +940,7 @@ final class SML2NeuralTests: XCTestCase {
 //        let test_bytes: (images: [UInt8], labels: [UInt8]) = ([UInt8](test_data.images), [UInt8](test_data.labels))
 //        print(train_bytes.images[0..<4], train_bytes.images[4..<8], train_bytes.images[8..<12], train_bytes.images[12..<16])
         
-        let train_images = Tensor(shape: [60000, 28, 28], grid: Array(train_bytes.images[16..<train_bytes.images.count]).map { Double($0) })
+        let train_images = Tensor(shape: [60000, 1, 28, 28], grid: Array(train_bytes.images[16..<train_bytes.images.count]).map { Double($0) })
         let labs: [[Double]] = Array(train_bytes.labels[8..<train_bytes.labels.count]).map {
             var arr = Array(repeating: 0.0, count: 10)
             arr[Int($0)] = 1.0
@@ -953,10 +953,138 @@ final class SML2NeuralTests: XCTestCase {
             print(train_images[mat: ex].grid[i..<i + train_images[mat: ex].shape[1]])
         }
     }
+    
+    func mnist() -> (images: Tensor, labels: Tensor) {
+        let train_file: (images: String, labels: String) = ("train-images-idx3-ubyte", "train-labels-idx1-ubyte")
+        
+        let train_url: (images: URL, labels: URL) = (Bundle.module.url(forResource: train_file.images, withExtension: nil)!, Bundle.module.url(forResource: train_file.labels, withExtension: nil)!)
+        
+        let train_data: (images: Data, labels: Data) = (try! Data(contentsOf: train_url.images), try! Data(contentsOf: train_url.labels))
+        
+        let train_bytes: (images: [UInt8], labels: [UInt8]) = ([UInt8](train_data.images), [UInt8](train_data.labels))
+        
+        let use = 200
+        
+        let train_images = Tensor(shape: [use, 1, 28, 28], grid: Array(train_bytes.images[16..<train_bytes.images.count - (28 * 28 * (60000 - use))]).map { Double($0) })
+        let labs: [[Double]] = Array(train_bytes.labels[8..<train_bytes.labels.count - (60000 - use)]).map {
+            var arr = Array(repeating: 0.0, count: 10)
+            arr[Int($0)] = 1.0
+            return arr
+        }
+        let train_labels = Tensor(shape: [use, 10], grid: labs.flatMap { $0 })
+        return (train_images / 255.0, train_labels)
+    }
+    
+    func testCNNMnist() throws {
+        // Make our layers
+        let sequence = Sequence([
+            Conv2D(to: 1, out: 24, size: 5),
+            LReLU(),
+            Pool2DMax(size: 2, stride: 2),
+            Flatten(),
+            Linear(to: 3456, out: 256),
+            LReLU(),
+            Linear(to: 256, out: 10),
+            Sigmoid()
+        ])
+        // Make other necessary nodes
+        let expected = Placeholder()
+        let avg = Placeholder()
+        let avg_lm = Placeholder()
+        let lm = Constant(0.0001)
+        // Binary Cross Entropy Loss Function (Vectorized)! also our computational graph lol
+        let J = avg * Constant(-1.0) * ((sequence.predicted.transpose() + Constant(0.00000001)).log() <*> expected + ((Constant(1.0) - sequence.predicted.transpose() + Constant(0.00000001)).log() <*> (Constant(1.0) - expected))).sumDiag() + avg_lm * (lm * sequence.regularizer)
+        let session = Session(parallel: parallel)
+        session.build(J)
+        print("loading mnist...")
+//        let process: SML2.Process = Process()
+        let (X, Y) = mnist()
+//        print("normalizing mnist...")
+//        X = process.zscore_image(X, type: .data)
+        let optim = Adam()
+        
+        // Minibatch
+        let b = 10
+        // Set up our number of batches
+        let batches = Int(ceil(Double(X.shape[0]) / Double(b)))
+        // Set up all of our mini batchs in advance
+        var mini_batches = [(Tensor, Tensor)](repeating: (Tensor(shape: [], grid: []), Tensor(shape: [], grid: [])), count: batches)
+        print("partioning batches...")
+        // Partition X and Y
+        for s in 0..<batches {
+            // Get the indicies for our batches
+            let start = s * b
+            let end = (s + 1) * b
+            // Set up sth mini X batch
+            let X_mini = X[t3Ds: start..<(end < X.shape[0] ? end : X.shape[0])]
+            // Set up sth mini Y batch
+            let YT_mini = Y[rows: start..<(end < Y.shape[0] ? end : Y.shape[0])].transpose()
+            // Now add this mini batch to our mini bathces
+            mini_batches[s] = (X_mini, YT_mini)
+        }
+        // Train for # of epochs
+        let epochs = 10
+        // Passes for time remaining
+        let passes = epochs * batches
+        var pass = 0
+        print("training...")
+        for i in 0..<epochs {
+            // Adam requires incrementing t step each epoch
+            optim.inc()
+            // Set up empty loss for this epoch
+            var loss = 0.0
+            // Run mini batch gradient descent to train network
+            var curr_batch = 0
+            for (X_mini, YT_mini) in mini_batches {
+                // Get mini batch size (number of images in this batch)
+                let m_mini = Double(X_mini.shape[0])
+                // Reset our placeholders for our input data and avg coefficient
+                let start = CFAbsoluteTimeGetCurrent()
+                // X not transposed since images will be transposed when we flatten, Y transposed since predicted will be transposed when doing math with expected
+                session.pass([sequence.input: X_mini, expected: YT_mini, avg: Tensor(1.0 / (m_mini)), avg_lm: Tensor(1.0 / (m_mini))])
+                // Forward and backward
+                let (out, grads) = session.run(J)
+                // Run gradient descent with Adam optimizer
+                session.descend(grads: grads, optim: optim, lr: 0.01)
+                // Made anotehr pass over data set
+                pass += 1
+                // Notify batch finished
+                print("Finished Batch \(curr_batch + 1) of \(batches) in Epoch \(i + 1) of \(epochs)")
+                // Calculate time left
+                let diff = CFAbsoluteTimeGetCurrent() - start
+                let seconds = Int(Double(diff) * Double(passes - pass))
+                print("--------------- Est Remaining: \(seconds / 3600) Hours, \((seconds % 3600) / 60) Minutes, \((seconds % 3600) % 60) Seconds ---------------")
+                // Add to loss
+                loss += out.grid.first!
+                // Moving onto next batch
+                curr_batch += 1
+            }
+            // Average loss from each batches lsos
+            loss = loss / Double(batches)
+            // Display loss
+            print("*************************************************************************************")
+            print("")
+            print(":                         Loss \(loss), Epoch \(i + 1)                         :")
+            print("")
+            print("*************************************************************************************")
+            print("")
+        }
+        // Rset our placeholder for our input data
+        session.pass([sequence.input: X[t3D: 0]])
+//        session.pass([sequence.input: process.zscore_image(X[t3D: 0], type: .pred)])
+        // Stop forwarding after we have our predicted (other dependencies for J may fire during forward if they have a low dependency count despite not contributing to sequence.predicted sub graph)
+        let (out, _) = session.run(J, till: sequence.predicted)
+        // Should be class
+        print(out.grid, Y[row: 0])
+    }
 }
 
 /*
  vDSP_imgfir is doing a mathematically correct convolution operation (it rotates kernel before running), WE WANT CROSS CORRELATION (maybe gradients are wrong check kernel rot 180, passing gradient check tho?)
+ Pool is not stable, make it stable?
+ Confirm pool stride works
+ vDSP_imgfir with even kernel size strange behavior, investigate
+ Conv net initialization (maybe done?)
  SumAxis for 3 >= tensors does not work
  Add custom print for tensor
  Test batchnorm layer is correct with 'hand' calculated gradients (already kinda did this but maybe confirm? maybe also do batchnorm the longer way?)
