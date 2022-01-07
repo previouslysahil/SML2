@@ -1091,6 +1091,7 @@ final class SML2NeuralTests: XCTestCase {
 
 /*
  vDSP_imgfir is doing a mathematically correct convolution operation (it rotates kernel before running), WE WANT CROSS CORRELATION (maybe gradients are wrong check kernel rot 180, passing gradient check tho?)
+ SumAxis needs refactoring!
  Pool is not stable, make it stable?
  Confirm pool stride works
  vDSP_imgfir with even kernel size strange behavior, investigate

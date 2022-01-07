@@ -447,23 +447,13 @@ final class SML2TensorTests: XCTestCase {
         
         // Reset image
         image = Tensor([[1, 2, 3, 4, 5], [1, 2, 3, 4, 5], [1, 2, 3, 4, 5], [1, 2, 3, 4, 5], [1, 2, 3, 4, 5]])
-        // Add extra shape for extra shape testing
-        image.shape.insert(1, at: 0)
         t = image.conv2D(with: kernel)
-        XCTAssert(t == Tensor(shape: [1, 5, 5], grid: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), "convolve2D  plain vDSP with extra shape")
-        t.shape.remove(at: 0)
+        XCTAssert(t == Tensor(shape: [5, 5], grid: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), "convolve2D  plain vDSP with extra shape")
         
         t = t.pad(1, 1)
         XCTAssert(t == Tensor(shape: [7, 7], grid: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), "increase padding of image")
         t = t.trim(2, 2)
         XCTAssert(t == Tensor(shape: [3, 3], grid: [26.0, 39.0, 52.0, 26.0, 39.0, 52.0, 26.0, 39.0, 52.0]), "decrease padding of image")
-        
-        t.shape.insert(1, at: 0)
-        t = t.pad(2, 2)
-        XCTAssert(t == Tensor(shape: [1, 7, 7], grid: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), "increase padding of image")
-        t = t.trim(2, 2)
-        XCTAssert(t == Tensor(shape: [1, 3, 3], grid: [26.0, 39.0, 52.0, 26.0, 39.0, 52.0, 26.0, 39.0, 52.0]), "decrease padding of image")
-        t.shape.remove(at: 0)
 
         t = t.pad(1, 2)
         XCTAssert(t == Tensor(shape: [5, 7], grid: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 26.0, 39.0, 52.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), "increase padding to non symmetrical image")
@@ -512,8 +502,6 @@ final class SML2TensorTests: XCTestCase {
         XCTAssert(tensor.rot180() == Tensor([[3, 3, 3], [2, 2, 2], [1, 1, 1]]), "rot 180")
         
         tensor = Tensor([[1, 1, 1], [2, 2, 2], [3, 3, 3]])
-        tensor.shape.insert(1, at: 0)
-        XCTAssert(tensor.rot180() == Tensor(shape: [1, 3, 3], grid: [3, 3, 3, 2, 2, 2, 1, 1, 1]), "rot 180 with extra shape")
     }
     
     func testArrayView() throws {
