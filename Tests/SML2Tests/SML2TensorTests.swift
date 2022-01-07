@@ -536,14 +536,30 @@ final class SML2TensorTests: XCTestCase {
         XCTAssert(Array(tensor.shape.main[1..<5]) == [4, 5, 6, 5], "range for array view with extra shape")
     }
     
-    func testZscoreImage() throws {
-        var tensor: Tensor
-        
-        tensor = Tensor(shape: [2, 1, 3, 3], grid: [1, 2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-//        print(tensor[t3D: 0])
-        let (norm, mean, std) = tensor.zscore_image()
-        print(norm, (tensor[t3D: 0] - mean) / std, (tensor[t3D: 1] - mean) / std)
-    }
+//    func testImgFir() throws {
+//        let image = Tensor(shape: [34, 34], repeating: 3)
+//        let kernel = Tensor(shape: [24, 24], repeating: 10)
+//
+//        var res = image.conv2D_valid(with: kernel)
+//        print(res.shape)
+//        for i in stride(from: 0, to: res.grid.count, by: res.shape[1]) {
+//            print(res.grid[i..<i + res.shape[1]])
+//        }
+//        res = image.conv2D_mine(with: kernel)
+//        print(res.shape)
+//        for i in stride(from: 0, to: res.grid.count, by: res.shape[1]) {
+//            print(res.grid[i..<i + res.shape[1]])
+//        }
+//    }
+    
+//    func testZscoreImage() throws {
+//        var tensor: Tensor
+//
+//        tensor = Tensor(shape: [2, 1, 3, 3], grid: [1, 2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+////        print(tensor[t3D: 0])
+//        let (norm, mean, std) = tensor.zscore_image()
+//        print(norm, (tensor[t3D: 0] - mean) / std, (tensor[t3D: 1] - mean) / std)
+//    }
     
     func testType() throws {
         var tensor1: Tensor

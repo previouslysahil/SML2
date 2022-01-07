@@ -490,7 +490,7 @@ extension Tensor {
     public func conv2D_valid(with kernel: Tensor) -> Tensor {
         // vDSP_imgfir even kernels wonky behavior....
         if kernel.shape[0] % 2 == 0 || kernel.shape[1] % 2 == 0 {
-            return conv2D_mine(with: kernel)
+            return self.pad(0, 1, 0, 1).conv2D(with: kernel.pad(0, 1, 0, 1)).trim((kernel.shape.main[0]) / 2, (kernel.shape.main[1]) / 2)
         }
         return self.conv2D(with: kernel).trim((kernel.shape.main[0] - 1) / 2, (kernel.shape.main[1] - 1) / 2)
     }
@@ -562,6 +562,21 @@ extension Tensor {
         out.shape.insert(contentsOf: shape.leftover.view, at: 0)
         return out
     }
+    public func pad(_ le: Int, _ ri: Int, _ to: Int, _ bo: Int) -> Tensor {
+        precondition(shape.main.count == 2 && shape.main[1] != 1, "Must be a matrix")
+        var out = Tensor(shape: [shape.main[0] + le + ri, shape.main[1] + to + bo], repeating: 0)
+        var idx = 0
+        for i in 0..<out.grid.count {
+            let r = i / out.shape[1]
+            let c = i % out.shape[1]
+            // Only store non-padding numbers
+            if r <= -1 + le || r >= out.shape[0] - ri || c <= -1 + to || c >= out.shape[1] - bo { continue }
+            out.grid[c + r * out.shape[1]] = grid[idx]
+            idx += 1
+        }
+        out.shape.insert(contentsOf: shape.leftover.view, at: 0)
+        return out
+    }
     public func trim(_ w: Int, _ h: Int) -> Tensor {
         precondition(shape.main.count == 2 && shape.main[1] != 1, "Must be a matrix")
         var out = Tensor(shape: [shape.main[0] - 2 * w, shape.main[1] - 2 * h], repeating: 0)
@@ -571,6 +586,21 @@ extension Tensor {
             let c = i % shape.main[1]
             // Only store non-padding numbers
             if r <= -1 + w || r >= shape.main[0] - w || c <= -1 + h || c >= shape.main[1] - h { continue }
+            out.grid[idx] = grid[c + r * shape.main[1]]
+            idx += 1
+        }
+        out.shape.insert(contentsOf: shape.leftover.view, at: 0)
+        return out
+    }
+    public func trim(_ le: Int, _ ri: Int, _ to: Int, _ bo: Int) -> Tensor {
+        precondition(shape.main.count == 2 && shape.main[1] != 1, "Must be a matrix")
+        var out = Tensor(shape: [shape.main[0] - le - ri, shape.main[1] - to - bo], repeating: 0)
+        var idx = 0
+        for i in 0..<grid.count {
+            let r = i / shape.main[1]
+            let c = i % shape.main[1]
+            // Only store non-padding numbers
+            if r <= -1 + le || r >= shape.main[0] - ri || c <= -1 + to || c >= shape.main[1] - bo { continue }
             out.grid[idx] = grid[c + r * shape.main[1]]
             idx += 1
         }

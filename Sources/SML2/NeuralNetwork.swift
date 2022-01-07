@@ -359,12 +359,12 @@ public final class Conv2D: Layer {
             out = Tensor(shape: [kernel.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
             // Now for each kernel we convolve with our data to produce our dth depth for out
             for d in 0..<kernel.shape[0] {
-                // Get the dth kernel
-                let kernelD = kernel[t3D: d]
+                // Used repeatedly in following for loop so cache
+                let dthKernel = kernel[t3D: d]
                 // Now convolve this kernel with our data, since both kernel and data are 3D Tensors we convolve the corresponding depth of data with that of kernelD
                 for m in 0..<kernel.shape[1] {
                     // pad to make same convolution if we have padding
-                    out![mat: d] = pad ? out![mat: d] + data[mat: m].pad((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D(with: kernelD[mat: m], type: .valid) : out![mat: d] + data[mat: m].conv2D(with: kernelD[mat: m], type: .valid)
+                    out![mat: d] = pad ? out![mat: d] + data[mat: m].pad((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D(with: dthKernel[mat: m], type: .valid) : out![mat: d] + data[mat: m].conv2D(with: dthKernel[mat: m], type: .valid)
                 }
                 // Add the bias for the dth depth of out which corresponds to the dth kernel
                 out![mat: d] = out![mat: d] + bias[d]
@@ -378,14 +378,16 @@ public final class Conv2D: Layer {
             out = Tensor(shape: [data.shape[0], kernel.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
             // Now for each image we do a convolution
             for n in 0..<data.shape[0] {
+                // Used repeatedly in following for loop so cache
+                let nthData = data[t3D: n]
                 // Now for each kernel we convolve with our data to produce our dth depth for out
                 for d in 0..<kernel.shape[0] {
-                    // Get the dth kernel
-                    let kernelD = kernel[t3D: d]
-                    // Now convolve this kernel with our data, since both kernel and data are 3D Tensors we convolve the corresponding depth of data with that of kernelD
+                    // Used repeatedly in following for loop so cache
+                    let dthKernel = kernel[t3D: d]
+                    // Now convolve this kernel with our data, since both kernel and data are 3D Tensors we convolve the corresponding depth of data with that of dth kernel
                     for m in 0..<kernel.shape[1] {
                         // pad to make same convolution if we have padding
-                        out![t3D: n][mat: d] = pad ? out![t3D: n][mat: d] + data[t3D: n][mat: m].pad((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D(with: kernelD[mat: m], type: .valid) : out![t3D: n][mat: d] + data[t3D: n][mat: m].conv2D(with: kernelD[mat: m], type: .valid)
+                        out![t3D: n][mat: d] = pad ? out![t3D: n][mat: d] + nthData[mat: m].pad((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D(with: dthKernel[mat: m], type: .valid) : out![t3D: n][mat: d] + nthData[mat: m].conv2D(with: dthKernel[mat: m], type: .valid)
                     }
                     // Add the bias for the dth depth of out which corresponds to the dth kernel
                     out![t3D: n][mat: d] = out![t3D: n][mat: d] + bias[d]
@@ -413,11 +415,14 @@ public final class Conv2D: Layer {
             gradData = Tensor(shape: data.shape, repeating: 0.0)
             // Each depth of gradData is influenced by every kernel that was convoluted over data so we must convolve each depth of dOut with the corresponding depth of each kernel
             for d in 0..<kernel.shape[0] {
+                // Used repeatedly in following for loop so cache
+                let dthKernel = kernel[t3D: d]
+                let dthDout = dOut![mat: d]
                 // For each kernel we are adding, its mth depth convolved with the respective dth dOut that is influenced by this kernel, with the respective gradData mth depth
                 for m in 0..<kernel.shape[1] {
                     // Each kernel only influences a single depth of dOut, but each depth of the kernel influences each depth of gradData, leading to this syntax
                     // trim gradData since padded areas dont contribute to gradient if we have padding
-                    gradData[mat: m] = pad ? gradData[mat: m] + kernel[t3D: d][mat: m].conv2D(with: dOut![mat: d], type: .full).trim((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2) : gradData[mat: m] + kernel[t3D: d][mat: m].conv2D(with: dOut![mat: d], type: .full)
+                    gradData[mat: m] = pad ? gradData[mat: m] + dthKernel[mat: m].conv2D(with: dthDout, type: .full).trim((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2) : gradData[mat: m] + dthKernel[mat: m].conv2D(with: dthDout, type: .full)
                 }
             }
             // For more clarity look at the previous github commit
@@ -427,11 +432,13 @@ public final class Conv2D: Layer {
             gradKernel = Tensor(shape: kernel.shape, repeating: 0)
             // Now we calculate the influence of each kernel
             for d in 0..<kernel.shape[0] {
+                // Used repeatedly in following for loop so cache
+                let dthDout = dOut![mat: d]
                 // For a single kernel its mth depths influence is found by the convolution with the mth depth of the data (since this depth only convolves with the respective data mth depth) and the dOut depth d that corresponds to this kernel (since each kernel only influences on depth of dOut)
                 for m in 0..<kernel.shape[1] {
                     // Here we are finding the partial derivative for the mth depth of kernel d
                     // pad data just as we pad in forward if we have padding
-                    gradKernel[t3D: d][mat: m] = pad ? data[mat: m].pad((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D(with: dOut![mat: d], type: .valid) : data[mat: m].conv2D(with: dOut![mat: d], type: .valid)
+                    gradKernel[t3D: d][mat: m] = pad ? data[mat: m].pad((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D(with: dthDout, type: .valid) : data[mat: m].conv2D(with: dthDout, type: .valid)
                 }
             }
             // For more clarity look at the previous github commit
@@ -448,13 +455,18 @@ public final class Conv2D: Layer {
             gradData = Tensor(shape: data.shape, repeating: 0.0)
             // Average each images dOut
             for n in 0..<data.shape[0] {
+                // Used repeatedly in following for loop so cache
+                let nthDout = dOut![t3D: n]
                 // Each depth of gradData is influenced by every kernel that was convoluted over data so we must convolve each depth of dOut with the corresponding depth of each kernel
                 for d in 0..<kernel.shape[0] {
+                    // Used repeatedly in following for loop so cache
+                    let dthKernel = kernel[t3D: d]
+                    let nthDthDout = nthDout[mat: d]
                     // For each kernel we are adding, its mth depth convolved with the respective dth dOut that is influenced by this kernel, with the respective gradData mth depth
                     for m in 0..<kernel.shape[1] {
                         // Each kernel only influences a single depth of dOut, but each depth of the kernel influences each depth of gradData, leading to this syntax
                         // trim gradData since padded areas dont contribute to gradient if we have padding
-                        gradData[t3D: n][mat: m] = pad ? gradData[t3D: n][mat: m] + kernel[t3D: d][mat: m].conv2D(with: dOut![t3D: n][mat: d], type: .full).trim((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2) : gradData[t3D: n][mat: m] + kernel[t3D: d][mat: m].conv2D(with: dOut![t3D: n][mat: d], type: .full)
+                        gradData[t3D: n][mat: m] = pad ? gradData[t3D: n][mat: m] + dthKernel[mat: m].conv2D(with: nthDthDout, type: .full).trim((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2) : gradData[t3D: n][mat: m] + dthKernel[mat: m].conv2D(with: nthDthDout, type: .full)
                     }
                 }
             }
@@ -465,13 +477,19 @@ public final class Conv2D: Layer {
             gradKernel = Tensor(shape: kernel.shape, repeating: 0)
             // Average each images dOut
             for n in 0..<data.shape[0] {
+                // Used repeatedly in following for loop so cache
+                let nthData = data[t3D: n]
+                let nthDout = dOut![t3D: n]
                 // Now we calculate the influence of each kernel
                 for d in 0..<kernel.shape[0] {
+                    // Used repeatedly in following for loop so cache
+                    let dthGradKernel = gradKernel[t3D: d]
+                    let nthDthDout = nthDout[mat: d]
                     // For a single kernel its mth depths influence is found by the convolution with the mth depth of the data (since this depth only convolves with the respective data mth depth) and the dOut depth d that corresponds to this kernel (since each kernel only influences on depth of dOut)
                     for m in 0..<kernel.shape[1] {
                         // Here we are finding the partial derivative for the mth depth of kernel d
                         // pad data just as we pad in forward if we have padding
-                        gradKernel[t3D: d][mat: m] = pad ? gradKernel[t3D: d][mat: m] + data[t3D: n][mat: m].pad((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D(with: dOut![t3D: n][mat: d], type: .valid) : gradKernel[t3D: d][mat: m] + data[t3D: n][mat: m].conv2D(with: dOut![t3D: n][mat: d], type: .valid)
+                        gradKernel[t3D: d][mat: m] = pad ? dthGradKernel[mat: m] + nthData[mat: m].pad((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D(with: nthDthDout, type: .valid) : dthGradKernel[mat: m] + nthData[mat: m].conv2D(with: nthDthDout, type: .valid)
                     }
                 }
             }
@@ -481,9 +499,11 @@ public final class Conv2D: Layer {
             gradBias = Tensor(shape: bias.shape, repeating: 0.0)
             // Average each images dOut
             for n in 0..<data.shape[0] {
+                // Used repeatedly in following for loop so cache
+                let nthDout = dOut![t3D: n]
                 // Do you realy need an explanation?
                 for d in 0..<kernel.shape[0] {
-                    gradBias[d] = gradBias[d] + dOut![t3D: n][mat: d].sum()
+                    gradBias[d] = gradBias[d] + nthDout[mat: d].sum()
                 }
             }
         } else {
@@ -524,10 +544,12 @@ public final class Pool2DMax: Layer {
             n_positions = Array(repeating: Array(repeating: [], count: input.shape[1]), count: input.shape[0])
             // Now for each nth image pool
             for n in 0..<input.shape[0] {
+                // Used repeatedly in following for loop so cache
+                let nthInput = input[t3D: n]
                 // Now pool each depth in the nth image input
                 for d in 0..<input.shape[1] {
                     // Pool and get positions for backpropagation
-                    let (pooled, positions) = input[t3D: n][mat: d].pool2D_max(size: size, strd: stride)
+                    let (pooled, positions) = nthInput[mat: d].pool2D_max(size: size, strd: stride)
                     out![t3D: n][mat: d] = pooled
                     // Cache this depths positions
                     n_positions![n][d] = positions
@@ -562,15 +584,19 @@ public final class Pool2DMax: Layer {
             var gradInput = Tensor(shape: input.shape, repeating: 0.0)
             // For each input image use its cached positions
             for n in 0..<n_positions!.count {
+                // Used repeatedly in following for loop so cache
+                let nthGradInput = gradInput[t3D: n]
+                let nthDout = dOut![t3D: n]
                 // The cached positions contains where our gradients in this nth gradInput should be
                 for (d, positions) in n_positions![n].enumerated() {
+                    // Used repeatedly in following for loop so cache
+                    var nthDthGradInput = nthGradInput[mat: d]
+                    let nthDthDout = nthDout[mat: d]
                     for (idx, pos) in positions.enumerated() {
                         // positions is as long as the grid of the dth depth of the nth dOut and each index in positions corresponds to a pos in the grid of the dth depth of the nth gradInput that should receive a derivative
-                        // This operation could probably be sped up (unless compiler optimizes it out)
-                        var nthDthGradInput = gradInput[t3D: n][mat: d]
-                        nthDthGradInput.grid[pos] = dOut![t3D: n][mat: d].grid[idx]
-                        gradInput[t3D: n][mat: d] = nthDthGradInput
+                        nthDthGradInput.grid[pos] = nthDthDout.grid[idx]
                     }
+                    gradInput[t3D: n][mat: d] = nthDthGradInput
                 }
             }
             // Set grad
@@ -580,13 +606,14 @@ public final class Pool2DMax: Layer {
             var gradInput = Tensor(shape: input.shape, repeating: 0.0)
             // The cached position contains where our gradients in gradInput should be
             for (d, positions) in n_positions![0].enumerated() {
+                // Used repeatedly in following for loop so cache
+                var dthGradInput = gradInput[mat: d]
+                let dthDout = dOut![mat: d]
                 for (idx, pos) in positions.enumerated() {
                     // positions is as long as the grid of the dth depth of dOut and each index in positions corresponds to a pos in the grid of the dth depth gradInput that should receive a derivative
-                    // This operation could probably be sped up (unless compiler optimizes it out)
-                    var dthGradInput = gradInput[mat: d]
-                    dthGradInput.grid[pos] = dOut![mat: d].grid[idx]
-                    gradInput[mat: d] = dthGradInput
+                    dthGradInput.grid[pos] = dthDout.grid[idx]
                 }
+                gradInput[mat: d] = dthGradInput
             }
             // Set grad
             grads[0] = gradInput

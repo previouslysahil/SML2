@@ -949,8 +949,8 @@ final class SML2NeuralTests: XCTestCase {
         let train_labels = Tensor(shape: [60000, 10], grid: labs.flatMap { $0 })
         let ex = 35982
         print(train_labels[row: ex].grid)
-        for i in stride(from: 0, to: train_images[mat: ex].count, by: train_images[mat: ex].shape[1]) {
-            print(train_images[mat: ex].grid[i..<i + train_images[mat: ex].shape[1]])
+        for i in stride(from: 0, to: train_images[t3D: ex].count, by: train_images[t3D: ex].shape[2]) {
+            print(train_images[t3D: ex].grid[i..<i + train_images[t3D: ex].shape[2]])
         }
     }
     
@@ -1028,6 +1028,7 @@ final class SML2NeuralTests: XCTestCase {
         let passes = epochs * batches
         var pass = 0
         print("training...")
+        let start = CFAbsoluteTimeGetCurrent()
         for i in 0..<epochs {
             // Adam requires incrementing t step each epoch
             optim.inc()
@@ -1038,8 +1039,8 @@ final class SML2NeuralTests: XCTestCase {
             for (X_mini, YT_mini) in mini_batches {
                 // Get mini batch size (number of images in this batch)
                 let m_mini = Double(X_mini.shape[0])
+                let batch_start = CFAbsoluteTimeGetCurrent()
                 // Reset our placeholders for our input data and avg coefficient
-                let start = CFAbsoluteTimeGetCurrent()
                 // X not transposed since images will be transposed when we flatten, Y transposed since predicted will be transposed when doing math with expected
                 session.pass([sequence.input: X_mini, expected: YT_mini, avg: Tensor(1.0 / (m_mini)), avg_lm: Tensor(1.0 / (m_mini))])
                 // Forward and backward
@@ -1051,8 +1052,8 @@ final class SML2NeuralTests: XCTestCase {
                 // Notify batch finished
                 print("Finished Batch \(curr_batch + 1) of \(batches) in Epoch \(i + 1) of \(epochs)")
                 // Calculate time left
-                let diff = CFAbsoluteTimeGetCurrent() - start
-                let seconds = Int(Double(diff) * Double(passes - pass))
+                let batch_time = CFAbsoluteTimeGetCurrent() - batch_start
+                let seconds = Int(Double(batch_time) * Double(passes - pass))
                 print("--------------- Est Remaining: \(seconds / 3600) Hours, \((seconds % 3600) / 60) Minutes, \((seconds % 3600) % 60) Seconds ---------------")
                 // Add to loss
                 loss += out.grid.first!
@@ -1062,20 +1063,29 @@ final class SML2NeuralTests: XCTestCase {
             // Average loss from each batches lsos
             loss = loss / Double(batches)
             // Display loss
-            print("*************************************************************************************")
+            print("*****************************************************************************")
             print("")
-            print(":                         Loss \(loss), Epoch \(i + 1)                         :")
+            print(":                         Loss \(String(format: "%.10f", loss)), Epoch \(i + 1)                         :")
             print("")
-            print("*************************************************************************************")
+            print("*****************************************************************************")
             print("")
         }
+        // Calculate time taken
+        let time = CFAbsoluteTimeGetCurrent() - start
+        let seconds = Int(Double(time))
+        print("Time taken: \(seconds / 3600) Hours, \((seconds % 3600) / 60) Minutes, \((seconds % 3600) % 60) Seconds")
         // Rset our placeholder for our input data
         session.pass([sequence.input: X[t3D: 0]])
 //        session.pass([sequence.input: process.zscore_image(X[t3D: 0], type: .pred)])
         // Stop forwarding after we have our predicted (other dependencies for J may fire during forward if they have a low dependency count despite not contributing to sequence.predicted sub graph)
         let (out, _) = session.run(J, till: sequence.predicted)
         // Should be class
-        print(out.grid, Y[row: 0])
+        print("")
+        print("")
+        print("predicting...")
+        print("| neurlnet: \(out.grid.map { String(format: "%.2f", Double(round(100 * $0) / 100)) }.joined(separator: " ")) |")
+        print("| expected: \(Y[row: 0].grid.map { String(format: "%.2f", $0) }.joined(separator: " ")) |")
+        print("")
     }
 }
 
