@@ -926,34 +926,6 @@ final class SML2NeuralTests: XCTestCase {
         fourD()
     }
     
-    func testBundle() throws {
-        let train_file: (images: String, labels: String) = ("train-images-idx3-ubyte", "train-labels-idx1-ubyte")
-//        let test_file: (images: String, labels: String) = ("t10k-images-idx3-ubyte", "t10k-labels-idx1-ubyte")
-        
-        let train_url: (images: URL, labels: URL) = (Bundle.module.url(forResource: train_file.images, withExtension: nil)!, Bundle.module.url(forResource: train_file.labels, withExtension: nil)!)
-//        let test_url: (images: URL, labels: URL) = (Bundle.module.url(forResource: test_file.images, withExtension: nil)!, Bundle.module.url(forResource: test_file.labels, withExtension: nil)!)
-        
-        let train_data: (images: Data, labels: Data) = (try! Data(contentsOf: train_url.images), try! Data(contentsOf: train_url.labels))
-//        let test_data: (images: Data, labels: Data) = (try! Data(contentsOf: test_url.images), try! Data(contentsOf: test_url.labels))
-        
-        let train_bytes: (images: [UInt8], labels: [UInt8]) = ([UInt8](train_data.images), [UInt8](train_data.labels))
-//        let test_bytes: (images: [UInt8], labels: [UInt8]) = ([UInt8](test_data.images), [UInt8](test_data.labels))
-//        print(train_bytes.images[0..<4], train_bytes.images[4..<8], train_bytes.images[8..<12], train_bytes.images[12..<16])
-        
-        let train_images = Tensor(shape: [60000, 1, 28, 28], grid: Array(train_bytes.images[16..<train_bytes.images.count]).map { Double($0) })
-        let labs: [[Double]] = Array(train_bytes.labels[8..<train_bytes.labels.count]).map {
-            var arr = Array(repeating: 0.0, count: 10)
-            arr[Int($0)] = 1.0
-            return arr
-        }
-        let train_labels = Tensor(shape: [60000, 10], grid: labs.flatMap { $0 })
-        let ex = 35982
-        print(train_labels[row: ex].grid)
-        for i in stride(from: 0, to: train_images[t3D: ex].count, by: train_images[t3D: ex].shape[2]) {
-            print(train_images[t3D: ex].grid[i..<i + train_images[t3D: ex].shape[2]])
-        }
-    }
-    
     func mnist() -> (images: Tensor, labels: Tensor) {
         let train_file: (images: String, labels: String) = ("train-images-idx3-ubyte", "train-labels-idx1-ubyte")
         
@@ -975,6 +947,27 @@ final class SML2NeuralTests: XCTestCase {
         return (train_images / 255.0, train_labels)
     }
     
+    func mnistTest() -> (images: Tensor, labels: Tensor) {
+        let test_file: (images: String, labels: String) = ("t10k-images-idx3-ubyte", "t10k-labels-idx1-ubyte")
+        
+        let test_url: (images: URL, labels: URL) = (Bundle.module.url(forResource: test_file.images, withExtension: nil)!, Bundle.module.url(forResource: test_file.labels, withExtension: nil)!)
+        
+        let test_data: (images: Data, labels: Data) = (try! Data(contentsOf: test_url.images), try! Data(contentsOf: test_url.labels))
+        
+        let test_bytes: (images: [UInt8], labels: [UInt8]) = ([UInt8](test_data.images), [UInt8](test_data.labels))
+        
+        let use = 10000
+        
+        let test_images = Tensor(shape: [use, 1, 28, 28], grid: Array(test_bytes.images[16..<test_bytes.images.count - (28 * 28 * (10000 - use))]).map { Double($0) })
+        let labs: [[Double]] = Array(test_bytes.labels[8..<test_bytes.labels.count - (10000 - use)]).map {
+            var arr = Array(repeating: 0.0, count: 10)
+            arr[Int($0)] = 1.0
+            return arr
+        }
+        let test_labels = Tensor(shape: [use, 10], grid: labs.flatMap { $0 })
+        return (test_images / 255.0, test_labels)
+    }
+    
     func testCNNMnist() throws {
         // Make our layers
         let sequence = Sequence([
@@ -987,6 +980,14 @@ final class SML2NeuralTests: XCTestCase {
             Linear(to: 256, out: 10),
             Sigmoid()
         ])
+//        print("loading saved params...")
+//        let url = Bundle.module.url(forResource: "data", withExtension: "json")!
+//        if let data = try? Data(contentsOf: url) {
+//            sequence.decode_params(data)
+//            print("saved params loaded...")
+//        } else {
+//            print("no saved params to load...")
+//        }
         // Make other necessary nodes
         let expected = Placeholder()
         let avg = Placeholder()
@@ -994,19 +995,18 @@ final class SML2NeuralTests: XCTestCase {
         let lm = Constant(0.0001)
         // Binary Cross Entropy Loss Function (Vectorized)! also our computational graph lol
         let J = avg * Constant(-1.0) * ((sequence.predicted.transpose() + Constant(0.00000001)).log() <*> expected + ((Constant(1.0) - sequence.predicted.transpose() + Constant(0.00000001)).log() <*> (Constant(1.0) - expected))).sumDiag() + avg_lm * (lm * sequence.regularizer)
+        // Make and build session
         let session = Session(parallel: parallel)
         session.build(J)
+        // *** TRAIN ***
         print("loading mnist...")
-//        let process: SML2.Process = Process()
-        let (X, Y) = mnist()
-//        print("normalizing mnist...")
-//        X = process.zscore_image(X, type: .data)
+        var (X, Y) = mnist()
+        // Set up optimizer
         let optim = Adam()
-        
         // Minibatch
-        let b = 10
+        var b = 50
         // Set up our number of batches
-        let batches = Int(ceil(Double(X.shape[0]) / Double(b)))
+        var batches = Int(ceil(Double(X.shape[0]) / Double(b)))
         // Set up all of our mini batchs in advance
         var mini_batches = [(Tensor, Tensor)](repeating: (Tensor(shape: [], grid: []), Tensor(shape: [], grid: [])), count: batches)
         print("partioning batches...")
@@ -1074,18 +1074,87 @@ final class SML2NeuralTests: XCTestCase {
         let time = CFAbsoluteTimeGetCurrent() - start
         let seconds = Int(Double(time))
         print("Time taken: \(seconds / 3600) Hours, \((seconds % 3600) / 60) Minutes, \((seconds % 3600) % 60) Seconds")
-        // Rset our placeholder for our input data
-        session.pass([sequence.input: X[t3D: 0]])
-//        session.pass([sequence.input: process.zscore_image(X[t3D: 0], type: .pred)])
-        // Stop forwarding after we have our predicted (other dependencies for J may fire during forward if they have a low dependency count despite not contributing to sequence.predicted sub graph)
-        let (out, _) = session.run(J, till: sequence.predicted)
-        // Should be class
+        // *** TEST ***
+        // Test our model
         print("")
         print("")
+        print("loading mnist test...")
+        // Set X and Y to be test data instead of train
+        (X, Y) = mnistTest()
+        // Minibatch
+        b = 50
+        // Set up our number of batches
+        batches = Int(ceil(Double(X.shape[0]) / Double(b)))
+        // Set up all of our mini batchs in advance
+        mini_batches = [(Tensor, Tensor)](repeating: (Tensor(shape: [], grid: []), Tensor(shape: [], grid: [])), count: batches)
+        print("partioning test batches...")
+        // Partition X and Y
+        for s in 0..<batches {
+            // Get the indicies for our batches
+            let start = s * b
+            let end = (s + 1) * b
+            // Set up sth mini X batch
+            let X_mini = X[t3Ds: start..<(end < X.shape[0] ? end : X.shape[0])]
+            // Set up sth mini Y batch
+            let YT_mini = Y[rows: start..<(end < Y.shape[0] ? end : Y.shape[0])].transpose()
+            // Now add this mini batch to our mini bathces
+            mini_batches[s] = (X_mini, YT_mini)
+        }
+        // Set up empty loss for this epoch
+        var loss = 0.0
+        var curr_batch = 0
+        print("gathering test loss...")
+        for (X_mini, YT_mini) in mini_batches {
+            // Get mini batch size (number of images in this batch)
+            let m_mini = Double(X_mini.shape[0])
+            // Reset our placeholders for our input data and avg coefficient
+            // X not transposed since images will be transposed when we flatten, Y transposed since predicted will be transposed when doing math with expected
+            session.pass([sequence.input: X_mini, expected: YT_mini, avg: Tensor(1.0 / (m_mini)), avg_lm: Tensor(1.0 / (m_mini))])
+            // Forward and backward
+            let (out, _) = session.run(J, till: J)
+            // Add to loss
+            loss += out.grid.first!
+            if batches / 10 == 0 {
+                print("@", terminator: "")
+            } else {
+                if curr_batch % (batches / 10) == 0 { print("@", terminator: "") }
+            }
+            curr_batch += 1
+        }
+        print("")
+        // Average loss from each batches lsos
+        loss = loss / Double(batches)
+        var correct = 0
         print("predicting...")
-        print("| neurlnet: \(out.grid.map { String(format: "%.2f", Double(round(100 * $0) / 100)) }.joined(separator: " ")) |")
-        print("| expected: \(Y[row: 0].grid.map { String(format: "%.2f", $0) }.joined(separator: " ")) |")
+        for i in 0..<X.shape[0] {
+                session.pass([sequence.input: X[t3D: i]])
+            // Get accuracy
+            let pred = session.run(J, till: sequence.predicted).out.grid
+            let max_pred = pred.enumerated().max { $0.element < $1.element }!
+            let expec = Y[row: i].grid
+            let max_expec = expec.enumerated().max { $0.element < $1.element }!
+            if max_expec.offset == max_pred.offset { correct += 1 }
+            if i % (X.shape[0] / 10) == 0 { print("@", terminator: "") }
+        }
         print("")
+        // Get accuracy
+        let accuracy = Double(correct) / Double(X.shape[0])
+        print("Accuracy on test set: \(accuracy), Loss on test set: \(loss)")
+        print("")
+        
+//        // Save
+//        print("attempting to save params...")
+//        if let data = sequence.encode_params() {
+//            let url = Bundle.module.url(forResource: "data", withExtension: "json")!
+//            if let _ = try? data.write(to: url) {
+//                print("saved params...")
+//            } else {
+//                print("unable to write params to path...")
+//            }
+//        } else {
+//            print("unable to encode params...")
+//        }
+//        print("")
     }
 }
 

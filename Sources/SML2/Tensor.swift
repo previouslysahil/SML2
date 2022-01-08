@@ -1250,6 +1250,10 @@ public struct Shape: Equatable, CustomStringConvertible, Swift.Sequence {
         self.arr = arr
     }
     
+    public func strip() -> [Int] {
+        return arr
+    }
+    
     public func reduce() -> Int {
         arr.reduce(1) { $0 * $1 }
     }

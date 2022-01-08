@@ -79,6 +79,58 @@ public struct Sequence {
         }
         self.layers = layers
     }
+    
+    public func encode_params() -> Data? {
+        var params = [SequenceParam]()
+        for (idx, layer) in layers.enumerated() {
+            if let layer = layer as? Linear {
+                let weight = layer.weight.out!
+                let bias = layer.bias.out!
+                params.append(SequenceParam(layer: idx, name: "weight", grid: weight.grid, shape: weight.shape.strip()))
+                params.append(SequenceParam(layer: idx, name: "weight bias", grid: bias.grid, shape: bias.shape.strip()))
+            } else if let layer = layer as? Conv2D {
+                let kernel = layer.kernel.out!
+                let bias = layer.bias.out!
+                params.append(SequenceParam(layer: idx, name: "kernel", grid: kernel.grid, shape: kernel.shape.strip()))
+                params.append(SequenceParam(layer: idx, name: "kernel bias", grid: bias.grid, shape: bias.shape.strip()))
+            }
+        }
+        return try? JSONEncoder().encode(params)
+    }
+    
+    public func decode_params(_ data: Data) {
+        if let params = try? JSONDecoder().decode([SequenceParam].self, from: data) {
+            for param in params {
+                let tensor = Tensor(shape: param.shape, grid: param.grid)
+                if param.name.contains("weight") {
+                    let layer = layers[param.layer] as! Linear
+                    if param.name.contains("bias") {
+                        layer.bias.out! = tensor
+                    } else {
+                        layer.weight.out! = tensor
+                    }
+                } else if param.name.contains("kernel") {
+                    let layer = layers[param.layer] as! Conv2D
+                    if param.name.contains("bias") {
+                        layer.bias.out! = tensor
+                    } else {
+                        layer.kernel.out! = tensor
+                    }
+                } else {
+                    print("Unknown param")
+                }
+            }
+        } else {
+            print("Unable to decode params")
+        }
+    }
+}
+public struct SequenceParam: Codable {
+    public var layer: Int
+    public var name: String
+//    public var idx: Int
+    public var grid: [Double]
+    public var shape: [Int]
 }
 
 // MARK: Layer
