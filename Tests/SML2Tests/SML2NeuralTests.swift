@@ -18,15 +18,15 @@ final class SML2NeuralTests: XCTestCase {
         let dt = DTensor([[1, 2, 3, 4, 5, 6], [12, 23, 34, 45, 56, 67], [13, 24, 35, 46, 57, 68], [19, 28, 37, 46, 55, 64]]).transpose()
 //        let d = Variable(dt)
 //        let layer = Linear(d, to: 6, out: 4)
-        let layer = Linear(to: 6, out: 4)
+        let layer = Linear<DTensor>(to: 6, out: 4)
         let J = layer.square().sum()
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         session.pass([layer.input: dt])
         let (out, grads) = session.run(J)
 //        print("----------\n", out)
 //        print(grads[J] ?? "NIL", grads[layer.weight] ?? "NIL", grads[layer.input] ?? "NIL", grads[layer.bias] ?? "NIL")
-        
+
         // NOW LETS TEST IF THIS LAYER IS CORRECT BY DOING IT BY 'HAND'
         // Weights init'd randomly so this makes sure they are the same random vals for both weight matrices
         let wtTest = layer.weight.out!
@@ -35,25 +35,25 @@ final class SML2NeuralTests: XCTestCase {
         let dTest = Variable(dtTest)
         let bt = DTensor(shape: [4, 1], repeating: 0.01)
         let bTest = Variable(bt)
-        func loss(_ a: Variable, _ b: Variable, _ c: Variable) -> Variable {
+        func loss(_ a: Variable<DTensor>, _ b: Variable<DTensor>, _ c: Variable<DTensor>) -> Variable<DTensor> {
             return (a <*> b + c).square().sum()
         }
         let JTest = loss(wTest, dTest, bTest)
         // Forward and backward prop wrt J through session
-        let sessionTest = Session(parallel: parallel)
+        let sessionTest = Session<Adam<DTensor>>(parallel: parallel)
         sessionTest.build(JTest)
         let (outTest, gradsTest) = sessionTest.run(JTest)
 //        print("----------\n", outTest)
 //        print(gradsTest[JTest] ?? "NIL", gradsTest[wTest] ?? "NIL", gradsTest[dTest] ?? "NIL", gradsTest[bTest] ?? "NIL")
         // Test for correctness
-        let epsilon = Variable(eps)
+        let epsilon = Variable<DTensor>(eps)
         let grad_wTest_numerical = (loss(wTest + epsilon, dTest, bTest) - loss(wTest - epsilon, dTest, bTest)) / (Variable(2.0) * epsilon)
         let graph2 = CGraph(grad_wTest_numerical, seed: DTensor(1))
         graph2.fwd()
 //        print(grad_wTest_numerical.out ?? "NIL")
         let _ = graph2.bwd()
-        func get_grad_wTest_numericals(_ pos_wTest: Variable, _ neg_wTest: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_wTest_numericals(_ pos_wTest: Variable<DTensor>, _ neg_wTest: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_wTest_numerical = (loss(pos_wTest, dTest, bTest) - loss(neg_wTest, dTest, bTest)) / (Variable(2.0) * epsilon)
             let graph2 = CGraph(grad_wTest_numerical, seed: DTensor(1))
             graph2.fwd()
@@ -78,8 +78,8 @@ final class SML2NeuralTests: XCTestCase {
         graph3.fwd()
 //        print(grad_dTest_numerical.out ?? "NIL")
         let _ = graph3.bwd()
-        func get_grad_dTest_numericals(_ pos_dTest: Variable, _ neg_dTest: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_dTest_numericals(_ pos_dTest: Variable<DTensor>, _ neg_dTest: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_dTest_numerical = (loss(wTest, pos_dTest, bTest) - loss(wTest, neg_dTest, bTest)) / (Variable(2.0) * epsilon)
             let graph3 = CGraph(grad_dTest_numerical, seed: DTensor(1))
             graph3.fwd()
@@ -104,8 +104,8 @@ final class SML2NeuralTests: XCTestCase {
         graph4.fwd()
 //        print(grad_bTest_numerical.out ?? "NIL")
         let _ = graph4.bwd()
-        func get_grad_bTest_numericals(_ pos_bTest: Variable, _ neg_bTest: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_bTest_numericals(_ pos_bTest: Variable<DTensor>, _ neg_bTest: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_bTest_numerical = (loss(wTest, dTest, pos_bTest) - loss(wTest, dTest, neg_bTest)) / (Variable(2.0) * epsilon)
             let graph4 = CGraph(grad_bTest_numerical, seed: DTensor(1))
             graph4.fwd()
@@ -128,15 +128,15 @@ final class SML2NeuralTests: XCTestCase {
         XCTAssert(outTest == out, "hand written linear out vs linear layer out")
         XCTAssert(gradsTest[JTest]! == grads[J]! && gradsTest[wTest]! == grads[layer.weight]! && gradsTest[dTest]! == grads[layer.input]! && gradsTest[bTest]! == grads[layer.bias]!, "hand written linear grads vs linear layer grads")
     }
-    
+
     func testFakeNetLinear() throws {
         // Make our layers
-        let sequence: Sequence = Sequence([
+        let sequence: Sequence = Sequence<DTensor>([
             Linear(to: 3, out: 5),
             Linear(to: 5, out: 10)
         ])
         let J = sequence.predicted.sum()
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         let dt = DTensor([[1, 2, 3], [12, 23, 34], [13, 24, 35], [19, 28, 37]]).transpose()
         session.pass([sequence.input: dt])
@@ -144,41 +144,41 @@ final class SML2NeuralTests: XCTestCase {
         print(out)
         session.descend(grads: grads, optim: Adam(), lr: 0.3)
     }
-    
+
     func testSigmoid() throws {
         let dt = DTensor([[1, 2, 3, 4], [5, 6, 7, 8]])
         let d = Variable(dt)
         let layer = Sigmoid(d)
         let J = (layer <*> Variable(DTensor([[1, 2, 3, 4], [5, 6, 7, 8]]).transpose())).sum()
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         session.pass([layer.input: dt])
         let (out, grads) = session.run(J)
 //        print("----------\n", out)
 //        print(grads[J] ?? "NIL", grads[layer.input] ?? "Nil")
-        
+
         // NOW LETS TEST IF THIS LAYER IS CORRECT BY DOING IT BY 'HAND'
         let dtTest = DTensor([[1, 2, 3, 4], [5, 6, 7, 8]])
         let dTest = Variable(dtTest)
-        func loss(_ a: Variable) -> Variable {
+        func loss(_ a: Variable<DTensor>) -> Variable<DTensor> {
             return ((Variable(1.0) / (Variable(1.0) + (Negate(a)).exp())) <*> Variable(DTensor([[1, 2, 3, 4], [5, 6, 7, 8]]).transpose())).sum()
         }
         let JTest = loss(dTest)
         // Forward and backward prop wrt J through session
-        let sessionTest = Session(parallel: parallel)
+        let sessionTest = Session<Adam<DTensor>>(parallel: parallel)
         sessionTest.build(JTest)
         let (outTest, gradsTest) = sessionTest.run(JTest)
 //        print("----------\n", outTest)
 //        print(gradsTest[JTest] ?? "NIL", gradsTest[dTest] ?? "NIL")
         // Test for correctness
-        let epsilon = Variable(eps)
+        let epsilon = Variable<DTensor>(eps)
         let grad_dTest_numerical = (loss(dTest + epsilon) - loss(dTest - epsilon)) / (Variable(2.0) * epsilon)
         let graph3 = CGraph(grad_dTest_numerical, seed: DTensor(1))
         graph3.fwd()
     //        print(grad_dTest_numerical.out ?? "NIL")
         let _ = graph3.bwd()
-        func get_grad_dTest_numericals(_ pos_dTest: Variable, _ neg_dTest: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_dTest_numericals(_ pos_dTest: Variable<DTensor>, _ neg_dTest: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_dTest_numerical = (loss(pos_dTest) - loss(neg_dTest)) / (Variable(2.0) * epsilon)
             let graph3 = CGraph(grad_dTest_numerical, seed: DTensor(1))
             graph3.fwd()
@@ -201,17 +201,17 @@ final class SML2NeuralTests: XCTestCase {
         XCTAssert(outTest == out, "hand written linear out vs linear layer out")
         XCTAssert((gradsTest[JTest]! - grads[J]!).grid.allSatisfy { $0 < eps } && (gradsTest[dTest]! - grads[layer.input]!).grid.allSatisfy { $0 < eps }, "hand written linear grads vs linear layer grads")
     }
-    
+
     func testFakeNetSigmoid() throws {
         // Make our layers
-        let sequence: Sequence = Sequence([
+        let sequence: Sequence = Sequence<DTensor>([
             Linear(to: 3, out: 5),
             Sigmoid(),
             Linear(to: 5, out: 10),
             Sigmoid()
         ])
         let J = sequence.predicted.sum()
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         let dt = DTensor([[1, 2, 3], [12, 23, 34], [13, 24, 35], [19, 28, 37]]).transpose()
         session.pass([sequence.input: dt])
@@ -219,7 +219,7 @@ final class SML2NeuralTests: XCTestCase {
         print(out)
         session.descend(grads: grads, optim: Adam(), lr: 0.3)
     }
-    
+
     func testMseNet() throws {
         // Data
         var data = [[Double]]()
@@ -231,10 +231,10 @@ final class SML2NeuralTests: XCTestCase {
             let inverted = data[j].map { 1 - $0 }
             labels.append(inverted)
         }
-        let process: SML2.Process = Process()
+        let process: SML2.Process<DTensor> = Process()
         let (shuffledData, shuffledLabels) = process.shuffle(data: data, labels: labels)
         // Make our layers
-        let sequence = Sequence([
+        let sequence = Sequence<DTensor>([
             Linear(to: 3, out: 6),
 //            BatchNorm(to: 6),
             ReLU(),
@@ -246,17 +246,17 @@ final class SML2NeuralTests: XCTestCase {
             ReLU()
         ])
         // Make other necessary nodes
-        let expected = Placeholder()
-        let avg = Placeholder()
-        let avg_lm = Placeholder()
-        let lm = Constant(0.0001)
+        let expected = Placeholder<DTensor>()
+        let avg = Placeholder<DTensor>()
+        let avg_lm = Placeholder<DTensor>()
+        let lm = Constant<DTensor>(0.0001)
         // MSE Loss Function (Vectorized)! also our computational graph lol
         let J = avg * (sequence.predicted - expected).pow(2).sum() + avg_lm * (lm * sequence.regularizer)
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         let X: DTensor = process.zscore(DTensor(shuffledData), type: .data)
         let Y: DTensor = DTensor(shuffledLabels)
-        let optim = Adam()
+        let optim = Adam<DTensor>()
         // Minibatch
         let b = 100
         // Set up our number of batches
@@ -311,7 +311,7 @@ final class SML2NeuralTests: XCTestCase {
         // Should be [0.55, 0.79, 0.11]
         print(out)
     }
-    
+
     func testMseNet2() throws {
         // Data
         var data = [[Double]]()
@@ -322,10 +322,10 @@ final class SML2NeuralTests: XCTestCase {
         for j in 0..<10000 {
             labels.append([pow(data[j][0], 2)])
         }
-        let process: SML2.Process = Process()
+        let process: SML2.Process<DTensor> = Process()
         let (shuffledData, shuffledLabels) = process.shuffle(data: data, labels: labels)
         // Make our layers
-        let sequence = Sequence([
+        let sequence = Sequence<DTensor>([
             Linear(to: 1, out: 8),
 //            BatchNorm(to: 8),
             LReLU(),
@@ -343,17 +343,17 @@ final class SML2NeuralTests: XCTestCase {
             LReLU()
         ])
         // Make other necessary nodes
-        let expected = Placeholder()
-        let avg = Placeholder()
-        let avg_lm = Placeholder()
-        let lm = Constant(0.0001)
+        let expected = Placeholder<DTensor>()
+        let avg = Placeholder<DTensor>()
+        let avg_lm = Placeholder<DTensor>()
+        let lm = Constant<DTensor>(0.0001)
         // MSE Loss Function (Vectorized)! also our computational graph lol
         let J = avg * (sequence.predicted - expected).pow(2).sum() + avg_lm * (lm * sequence.regularizer)
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         let X: DTensor = process.zscore(DTensor(shuffledData), type: .data)
         let Y: DTensor = DTensor(shuffledLabels)
-        let optim = Adam()
+        let optim = Adam<DTensor>()
         // Minibatch
         let b = 100
         // Set up our number of batches
@@ -416,7 +416,7 @@ final class SML2NeuralTests: XCTestCase {
             print(out.grid, test.first!)
         }
     }
-    
+
     func testBinaryCrossEntropy() throws {
         // Data
         var data = [[Double]]()
@@ -441,10 +441,10 @@ final class SML2NeuralTests: XCTestCase {
                 labels.append([0, 0, 1]) // 20 - 30 is CLASS 3
             }
         }
-        let process: SML2.Process = Process()
+        let process: SML2.Process<DTensor> = Process()
         let (shuffledData, shuffledLabels) = process.shuffle(data: data, labels: labels)
         // Make our layers
-        let sequence = Sequence([
+        let sequence = Sequence<DTensor>([
             Linear(to: 1, out: 2),
 //            BatchNorm(to: 2),
             LReLU(),
@@ -456,17 +456,17 @@ final class SML2NeuralTests: XCTestCase {
             Sigmoid()
         ])
         // Make other necessary nodes
-        let expected = Placeholder()
-        let avg = Placeholder()
-        let avg_lm = Placeholder()
-        let lm = Constant(0.0001)
+        let expected = Placeholder<DTensor>()
+        let avg = Placeholder<DTensor>()
+        let avg_lm = Placeholder<DTensor>()
+        let lm = Constant<DTensor>(0.0001)
         // Binary Cross Entropy Loss Function (Vectorized)! also our computational graph lol
         let J = avg * Constant(-1.0) * ((sequence.predicted.transpose() + Constant(0.00000001)).log() <*> expected + ((Constant(1.0) - sequence.predicted.transpose() + Constant(0.00000001)).log() <*> (Constant(1.0) - expected))).sumDiag() + avg_lm * (lm * sequence.regularizer)
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         let X: DTensor = process.zscore(DTensor(shuffledData), type: .data)
         let Y: DTensor = DTensor(shuffledLabels)
-        let optim = Adam()
+        let optim = Adam<DTensor>()
         // Minibatch
         let b = 100
         // Set up our number of batches
@@ -534,38 +534,38 @@ final class SML2NeuralTests: XCTestCase {
             print(out.grid, test.first!)
         }
     }
-    
+
     func testConvLayer() throws {
         var pad = false
         pad = false
-        
+
         let dt1 = DTensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]])
-        let conv1 = Conv2D(to: 2, out: 1, size: 3, pad: pad)
-        
+        let conv1 = Conv2D<DTensor>(to: 2, out: 1, size: 3, pad: pad)
+
         let dt2 = DTensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]])
-        let conv2 = Conv2D(to: 2, out: 2, size: 3, pad: pad)
-        
+        let conv2 = Conv2D<DTensor>(to: 2, out: 2, size: 3, pad: pad)
+
         let dt3 = DTensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]])
-        let conv3 = Conv2D(to: 1, out: 1, size: 3, pad: pad)
-        
+        let conv3 = Conv2D<DTensor>(to: 1, out: 1, size: 3, pad: pad)
+
         let dt4 = DTensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]])
-        let conv4 = Conv2D(to: 1, out: 4, size: 3, pad: pad)
-        
+        let conv4 = Conv2D<DTensor>(to: 1, out: 4, size: 3, pad: pad)
+
         let DT = [dt1, dt2, dt3, dt4]
         let CONV = [conv1, conv2, conv3, conv4]
         let SHAPE: [[Int]] = pad ? [[1, 5, 5], [2, 5, 5], [1, 5, 5], [4, 5, 5]] : [[1, 3, 3], [2, 3, 3], [1, 3, 3], [4, 3, 3]]
-        
+
         var i = 0
         // grad check for each convolution type variation
         for (dt, conv) in zip(DT, CONV) {
             let J = conv.sum()
-            let session = Session(parallel: parallel)
+            let session = Session<Adam<DTensor>>(parallel: parallel)
             session.build(J)
             session.pass([conv.input: dt])
             let (out, grads) = session.run(J)
 //            print("----------\n", out)
 //            print(grads[J] ?? "NIL", grads[conv.input] ?? "NIL", grads[conv.kernel] ?? "NIL")
-            
+
             // NOW LETS TEST IF THIS LAYER IS CORRECT BY DOING IT BY 'HAND'
             // Kernel init'd randomly so this makes sure they are the same random vals for both weight matrices
             let kernelTest = conv.kernel.out!
@@ -599,7 +599,7 @@ final class SML2NeuralTests: XCTestCase {
             // Test data
             func get_grad_data_numericals(_ pos_data: DTensor, _ neg_data: DTensor, idx: Int) {
                 let grad_data_numerical = (loss(pos_data, kernelTest, biasTest) - loss(neg_data, kernelTest, biasTest)) / (2.0 * eps)
-                
+
                 let diff_data = abs(grads[conv.input]!.grid[idx] - grad_data_numerical) / max(abs(grads[conv.input]!.grid[idx]), abs(grad_data_numerical))
 //                print(diff_data)
                 XCTAssert(diff_data < bound, "analytical vs numerical gradient check for dataTest")
@@ -633,7 +633,7 @@ final class SML2NeuralTests: XCTestCase {
             // Test bias
             func get_grad_bias_numericals(_ pos_bias: DTensor, _ neg_bias: DTensor, idx: Int) {
                 let grad_bias_numerical = (loss(dataTest, kernelTest, pos_bias) - loss(dataTest, kernelTest, neg_bias)) / (2.0 * eps)
-                
+
                 let diff_bias = abs(grads[conv.bias]!.grid[idx] - grad_bias_numerical) / max(abs(grads[conv.bias]!.grid[idx]), abs(grad_bias_numerical))
 //                print(diff_bias)
                 XCTAssert(diff_bias < bound, "analytical vs numerical gradient check for biasTest")
@@ -656,46 +656,46 @@ final class SML2NeuralTests: XCTestCase {
             i += 1
         }
     }
-    
+
     func testConvLayerBatch() throws {
         var pad = false
         pad = false
-        
+
         let dt11: [[[Double]]] = [[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]]
         let dt12 = dt11.map { $0.map { $0.map { $0 + 394 } } }
         let dt1 = DTensor([dt11, dt12])
-        let conv1 = Conv2D(to: 2, out: 1, size: 3, pad: pad)
-        
+        let conv1 = Conv2D<DTensor>(to: 2, out: 1, size: 3, pad: pad)
+
         let dt21: [[[Double]]] = [[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]]
         let dt22 = dt21.map { $0.map { $0.map { $0 + 58 } } }
         let dt2 = DTensor([dt21, dt22])
-        let conv2 = Conv2D(to: 2, out: 2, size: 3, pad: pad)
-        
+        let conv2 = Conv2D<DTensor>(to: 2, out: 2, size: 3, pad: pad)
+
         let dt31: [[[Double]]] = [[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]]
         let dt32 = dt31.map { $0.map { $0.map { $0 + 23 } } }
         let dt3 = DTensor([dt31, dt32])
-        let conv3 = Conv2D(to: 1, out: 1, size: 3, pad: pad)
-        
+        let conv3 = Conv2D<DTensor>(to: 1, out: 1, size: 3, pad: pad)
+
         let dt41: [[[Double]]] = [[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]]
         let dt42 = dt41.map { $0.map { $0.map { $0 + 21 } } }
         let dt4 = DTensor([dt41, dt42])
-        let conv4 = Conv2D(to: 1, out: 4, size: 3, pad: pad)
-        
+        let conv4 = Conv2D<DTensor>(to: 1, out: 4, size: 3, pad: pad)
+
         let DT = [dt1, dt2, dt3, dt4]
         let CONV = [conv1, conv2, conv3, conv4]
         let SHAPE: [[Int]] = pad ? [[2, 1, 5, 5], [2, 2, 5, 5], [2, 1, 5, 5], [2, 4, 5, 5]] : [[2, 1, 3, 3], [2, 2, 3, 3], [2, 1, 3, 3], [2, 4, 3, 3]]
-        
+
         var i = 0
         // grad check for each convolution type variation
         for (dt, conv) in zip(DT, CONV) {
             let J = conv.sum()
-            let session = Session(parallel: parallel)
+            let session = Session<Adam<DTensor>>(parallel: parallel)
             session.build(J)
             session.pass([conv.input: dt])
             let (out, grads) = session.run(J)
 //            print("----------\n", out)
 //            print(grads[J] ?? "NIL", grads[conv.input] ?? "NIL", grads[conv.kernel] ?? "NIL")
-            
+
             // NOW LETS TEST IF THIS LAYER IS CORRECT BY DOING IT BY 'HAND'
             // Kernel init'd randomly so this makes sure they are the same random vals for both weight matrices
             let kernelTest = conv.kernel.out!
@@ -750,7 +750,7 @@ final class SML2NeuralTests: XCTestCase {
             // Test data
             func get_grad_data_numericals(_ pos_data: DTensor, _ neg_data: DTensor, idx: Int) {
                 let grad_data_numerical = (loss(pos_data, kernelTest, biasTest) - loss(neg_data, kernelTest, biasTest)) / (2.0 * eps)
-                
+
                 let diff_data = abs(grads[conv.input]!.grid[idx] - grad_data_numerical) / max(abs(grads[conv.input]!.grid[idx]), abs(grad_data_numerical))
 //                print(diff_data, idx, "data")
                 XCTAssert(diff_data < bound * 10, "analytical vs numerical gradient check for dataTest")
@@ -785,7 +785,7 @@ final class SML2NeuralTests: XCTestCase {
             // Test bias
             func get_grad_bias_numericals(_ pos_bias: DTensor, _ neg_bias: DTensor, idx: Int) {
                 let grad_bias_numerical = (loss(dataTest, kernelTest, pos_bias) - loss(dataTest, kernelTest, neg_bias)) / (2.0 * eps)
-                
+
                 let diff_bias = abs(grads[conv.bias]!.grid[idx] - grad_bias_numerical) / max(abs(grads[conv.bias]!.grid[idx]), abs(grad_bias_numerical))
 //                print(diff_bias, idx, "bias")
                 XCTAssert(diff_bias < bound, "analytical vs numerical gradient check for biasTest")
@@ -809,7 +809,7 @@ final class SML2NeuralTests: XCTestCase {
             i += 1
         }
     }
-    
+
     func testPoolLayer() throws {
         let size = 2
         // POOL2D IS NOT A STABLE MAX POOLER but does that really matter for gradients? NO, it doesnt
@@ -821,15 +821,15 @@ final class SML2NeuralTests: XCTestCase {
         let ds: [DTensor] = [DTensor([dt1]), DTensor([dt1, dt2]), DTensor([[dt1, dt2], [dt1, dt2].map { $0.map { $0.map { $0 + 392 } } }])]
         let SHAPES: [Shape] = [Shape([1, 4, 4]), Shape([2, 4, 4]), Shape([2, 2, 4, 4])]
         for (d, SHAPE) in zip(ds, SHAPES) {
-            let pool = Pool2DMax(size: size, stride: 1)
+            let pool = Pool2DMax<DTensor>(size: size, stride: 1)
             let J = pool.sum()
-            let session = Session(parallel: parallel)
+            let session = Session<Adam<DTensor>>(parallel: parallel)
             session.build(J)
             session.pass([pool.input: d])
             let (out, grads) = session.run(J)
 //            print("----------\n", out)
 //            print(grads[J] ?? "NIL", grads[conv.input] ?? "NIL", grads[conv.kernel] ?? "NIL")
-            
+
             // Now test
             let dataTest = pool.input.out!
             func loss(_ input: DTensor) -> Double {
@@ -874,7 +874,7 @@ final class SML2NeuralTests: XCTestCase {
             // Test input
             func get_grad_data_numericals(_ pos_data: DTensor, _ neg_data: DTensor, idx: Int) {
                 let grad_data_numerical = (loss(pos_data) - loss(neg_data)) / (2.0 * eps)
-                
+
                 let diff_data = grads[pool.input]!.grid[idx] - grad_data_numerical
 //                print(diff_data, idx, "data")
                 XCTAssert(diff_data < bound, "analytical vs numerical gradient check for dataTest")
@@ -893,23 +893,23 @@ final class SML2NeuralTests: XCTestCase {
             XCTAssert(abs(outTest - out.grid.first!) < eps, "hand written pool out vs pool layer out")
         }
     }
-    
+
     func testFlatten() throws {
         let dt1: [[[Double]]] = [[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]]
         let dt2 = dt1.map { $0.map { $0.map { $0 + 58 } } }
-        
+
         let threeD = {
             let dt = DTensor(dt1)
             let flatten = Flatten(Variable(dt))
             flatten.forward()
             let out = flatten.out!
             XCTAssert(out.transpose()[row: 0].grid == dt1.flatMap { $0 }.flatMap { $0 }, "flatten correct")
-            
+
             flatten.backward(dOut: flatten.out!)
             let grad = flatten.grads[0]
             XCTAssert(grad == dt, "flatten backwards correct")
         }
-        
+
         let fourD = {
             let dt = DTensor([dt1, dt2])
             let flatten = Flatten(Variable(dt))
@@ -917,7 +917,7 @@ final class SML2NeuralTests: XCTestCase {
             let out = flatten.out!
             XCTAssert(out.transpose()[row: 0].grid == dt1.flatMap { $0 }.flatMap { $0 }, "flatten correct")
             XCTAssert(out.transpose()[row: 1].grid == dt2.flatMap { $0 }.flatMap { $0 }, "flatten correct")
-            
+
             flatten.backward(dOut: flatten.out!)
             let grad = flatten.grads[0]
             XCTAssert(grad == dt, "flatten backwards correct")
@@ -970,7 +970,7 @@ final class SML2NeuralTests: XCTestCase {
     
     func testCNNMnist() throws {
         // Make our layers
-        let sequence = Sequence([
+        let sequence = Sequence<DTensor>([
             Conv2D(to: 1, out: 24, size: 5),
             LReLU(),
             Pool2DMax(size: 2, stride: 2),
@@ -989,20 +989,20 @@ final class SML2NeuralTests: XCTestCase {
 //            print("no saved params to load...")
 //        }
         // Make other necessary nodes
-        let expected = Placeholder()
-        let avg = Placeholder()
-        let avg_lm = Placeholder()
-        let lm = Constant(0.0001)
+        let expected = Placeholder<DTensor>()
+        let avg = Placeholder<DTensor>()
+        let avg_lm = Placeholder<DTensor>()
+        let lm = Constant<DTensor>(0.0001)
         // Binary Cross Entropy Loss Function (Vectorized)! also our computational graph lol
         let J = avg * Constant(-1.0) * ((sequence.predicted.transpose() + Constant(0.00000001)).log() <*> expected + ((Constant(1.0) - sequence.predicted.transpose() + Constant(0.00000001)).log() <*> (Constant(1.0) - expected))).sumDiag() + avg_lm * (lm * sequence.regularizer)
         // Make and build session
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         // *** TRAIN ***
         print("loading mnist...")
         var (X, Y) = mnist()
         // Set up optimizer
-        let optim = Adam()
+        let optim = Adam<DTensor>()
         // Minibatch
         var b = 50
         // Set up our number of batches

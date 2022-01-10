@@ -9,21 +9,21 @@ final class SML2Tests: XCTestCase {
     
     func testScalarSimple() throws {
         // CGraph currently does not check to see if whole graph is connected since we are only adding nodes by the root
-        let a = Variable(4)
-        let b = Variable(3)
+        let a = Variable<DTensor>(4)
+        let b = Variable<DTensor>(3)
         // Run through function
-        func loss(_ a: Variable, _ b: Variable) -> Variable {
+        func loss(_ a: Variable<DTensor>, _ b: Variable<DTensor>) -> Variable<DTensor> {
             return a * (a + b)
         }
         let J = loss(a, b)
         // Forward and backward prop wrt J through session
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         let (_, grads) = session.run(J)
 //        print("----------\n", out)
 //        print(grads[J] ?? "NIL", grads[a] ?? "NIL", grads[b] ?? "NIL")
         // Test for correctness
-        let epsilon = Variable(eps)
+        let epsilon = Variable<DTensor>(eps)
         let grad_a_numerical = (loss(a + epsilon, b) - loss(a - epsilon, b)) / (Variable(2.0) * epsilon)
         let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
         graph2.fwd()
@@ -34,30 +34,30 @@ final class SML2Tests: XCTestCase {
         graph3.fwd()
 //        print(grad_b_numerical.out ?? "NIL")
         let _ = graph3.bwd()
-        
+
         let diff_a = abs(grads[a]!.grid.first! - grad_a_numerical.out!.grid.first!) / max(abs(grads[a]!.grid.first!), abs(grad_a_numerical.out!.grid.first!))
         let diff_b = abs(grads[b]!.grid.first! - grad_b_numerical.out!.grid.first!) / max(abs(grads[b]!.grid.first!), abs(grad_b_numerical.out!.grid.first!))
         XCTAssert(diff_a < bound, "analytical vs numerical gradient check for a")
         XCTAssert(diff_b < bound, "analytical vs numerical gradient check for b")
     }
-    
+
     func testScalarMedium() throws {
         // Input nodes
-        let a = Variable(230.3)
-        let b = Variable(33.2)
+        let a = Variable<DTensor>(230.3)
+        let b = Variable<DTensor>(33.2)
         // Run through function
-        func loss(_ a: Variable, _ b: Variable) -> Variable {
+        func loss(_ a: Variable<DTensor>, _ b: Variable<DTensor>) -> Variable<DTensor> {
             return (a / b - a) * (b / a + a + b) * (a - b)
         }
         let J = loss(a, b)
         // Forward and backward prop wrt J through session
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         let (_, grads) = session.run(J)
 //        print("----------\n", out)
 //        print(grads[J] ?? "NIL", grads[a] ?? "NIL", grads[b] ?? "NIL")
         // Test for correctness
-        let epsilon = Variable(eps)
+        let epsilon = Variable<DTensor>(eps)
         let grad_a_numerical = (loss(a + epsilon, b) - loss(a - epsilon, b)) / (Variable(2.0) * epsilon)
         let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
         graph2.fwd()
@@ -68,32 +68,32 @@ final class SML2Tests: XCTestCase {
         graph3.fwd()
 //        print(grad_b_numerical.out ?? "NIL")
         let _ = graph3.bwd()
-        
+
         let diff_a = abs(grads[a]!.grid.first! - grad_a_numerical.out!.grid.first!) / max(abs(grads[a]!.grid.first!), abs(grad_a_numerical.out!.grid.first!))
         let diff_b = abs(grads[b]!.grid.first! - grad_b_numerical.out!.grid.first!) / max(abs(grads[b]!.grid.first!), abs(grad_b_numerical.out!.grid.first!))
         XCTAssert(diff_a < bound, "analytical vs numerical gradient check for a")
         XCTAssert(diff_b < bound, "analytical vs numerical gradient check for b")
     }
-    
+
     func testScalarComplex() throws {
         // Input nodes
-        let a = Variable(43)
-        let b = Variable(3)
-        let c = Variable(2)
+        let a = Variable<DTensor>(43)
+        let b = Variable<DTensor>(3)
+        let c = Variable<DTensor>(2)
         // Run through function
-        func loss(_ a: Variable, _ b: Variable, _ c: Variable) -> Variable {
+        func loss(_ a: Variable<DTensor>, _ b: Variable<DTensor>, _ c: Variable<DTensor>) -> Variable<DTensor> {
             let f = (a * b).sin() + (c - (a / b)).exp()
             return (f * f).log() * c
         }
         let J = loss(a, b, c)
         // Forward and backward prop wrt J through session
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         let (_, grads) = session.run(J)
 //        print("----------\n", out)
 //        print(grads[J] ?? "NIL", grads[a] ?? "NIL", grads[b] ?? "NIL", grads[c] ?? "NIL")
         // Test for correctness
-        let epsilon = Variable(eps)
+        let epsilon = Variable<DTensor>(eps)
         let grad_a_numerical = (loss(a + epsilon, b, c) - loss(a - epsilon, b, c)) / (Variable(2.0) * epsilon)
         let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
         graph2.fwd()
@@ -109,7 +109,7 @@ final class SML2Tests: XCTestCase {
         graph4.fwd()
 //        print(grad_c_numerical.out ?? "NIL")
         let _ = graph4.bwd()
-        
+
         let diff_a = abs(grads[a]!.grid.first! - grad_a_numerical.out!.grid.first!) / max(abs(grads[a]!.grid.first!), abs(grad_a_numerical.out!.grid.first!))
         let diff_b = abs(grads[b]!.grid.first! - grad_b_numerical.out!.grid.first!) / max(abs(grads[b]!.grid.first!), abs(grad_b_numerical.out!.grid.first!))
         let diff_c = abs(grads[c]!.grid.first! - grad_c_numerical.out!.grid.first!) / max(abs(grads[c]!.grid.first!), abs(grad_c_numerical.out!.grid.first!))
@@ -117,24 +117,24 @@ final class SML2Tests: XCTestCase {
         XCTAssert(diff_b < bound, "analytical vs numerical gradient check for b")
         XCTAssert(diff_c < bound, "analytical vs numerical gradient check for c")
     }
-    
+
     func testScalarPow() throws {
         // Input nodes
-        let a = Variable(2.0)
-        let b = Variable(11.0)
+        let a = Variable<DTensor>(2.0)
+        let b = Variable<DTensor>(11.0)
         // Run through function
-        func loss(_ a: Variable, _ b: Variable) -> Variable {
+        func loss(_ a: Variable<DTensor>, _ b: Variable<DTensor>) -> Variable<DTensor> {
             return a * b.pow(2.0)
         }
         let J = loss(a, b)
         // Forward and backward prop wrt J through session
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         let (_, grads) = session.run(J)
 //        print("----------\n", out)
 //        print(grads[J] ?? "NIL", grads[a] ?? "NIL", grads[b] ?? "NIL")
         // Test for correctness
-        let epsilon = Variable(eps)
+        let epsilon = Variable<DTensor>(eps)
         let grad_a_numerical = (loss(a + epsilon, b) - loss(a - epsilon, b)) / (Variable(2.0) * epsilon)
         let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
         graph2.fwd()
@@ -145,30 +145,30 @@ final class SML2Tests: XCTestCase {
         graph3.fwd()
 //        print(grad_b_numerical.out ?? "NIL")
         let _ = graph3.bwd()
-        
+
         let diff_a = abs(grads[a]!.grid.first! - grad_a_numerical.out!.grid.first!) / max(abs(grads[a]!.grid.first!), abs(grad_a_numerical.out!.grid.first!))
         let diff_b = abs(grads[b]!.grid.first! - grad_b_numerical.out!.grid.first!) / max(abs(grads[b]!.grid.first!), abs(grad_b_numerical.out!.grid.first!))
         XCTAssert(diff_a < bound, "analytical vs numerical gradient check for a")
         XCTAssert(diff_b < bound, "analytical vs numerical gradient check for b")
     }
-    
+
     func testScalarSquare() throws {
         // Input nodes
-        let a = Variable(230.3)
-        let b = Variable(33.2)
+        let a = Variable<DTensor>(230.3)
+        let b = Variable<DTensor>(33.2)
         // Run through function
-        func loss(_ a: Variable, _ b: Variable) -> Variable {
+        func loss(_ a: Variable<DTensor>, _ b: Variable<DTensor>) -> Variable<DTensor> {
             return (a / b - a.square()).square()
         }
         let J = loss(a, b)
         // Forward and backward prop wrt J through session
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         let (_, grads) = session.run(J)
 //        print("----------\n", out)
 //        print(grads[J] ?? "NIL", grads[a] ?? "NIL", grads[b] ?? "NIL")
         // Test for correctness
-        let epsilon = Variable(eps)
+        let epsilon = Variable<DTensor>(eps)
         let grad_a_numerical = (loss(a + epsilon, b) - loss(a - epsilon, b)) / (Variable(2.0) * epsilon)
         let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
         graph2.fwd()
@@ -179,13 +179,13 @@ final class SML2Tests: XCTestCase {
         graph3.fwd()
 //        print(grad_b_numerical.out ?? "NIL")
         let _ = graph3.bwd()
-        
+
         let diff_a = abs(grads[a]!.grid.first! - grad_a_numerical.out!.grid.first!) / max(abs(grads[a]!.grid.first!), abs(grad_a_numerical.out!.grid.first!))
         let diff_b = abs(grads[b]!.grid.first! - grad_b_numerical.out!.grid.first!) / max(abs(grads[b]!.grid.first!), abs(grad_b_numerical.out!.grid.first!))
         XCTAssert(diff_a < bound, "analytical vs numerical gradient check for a")
         XCTAssert(diff_b < bound, "analytical vs numerical gradient check for b")
     }
-    
+
     func testMatMedium() throws {
         // Input nodes
         let at = DTensor([[1, 2, 3, 4], [5, 6, 7, 8]])
@@ -196,31 +196,31 @@ final class SML2Tests: XCTestCase {
 //        let bt = Tensor([[9, 10, 11, 12]])
         let b = Variable(bt)
         // Run through function
-        func loss(_ a: Variable, _ b: Variable) -> Variable {
+        func loss(_ a: Variable<DTensor>, _ b: Variable<DTensor>) -> Variable<DTensor> {
             return (a * b * a / b.exp()).sum()
         }
         let J = loss(a, b)
         // Forward and backward prop wrt J through session
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         let (_, grads) = session.run(J)
 //        print("----------\n", out)
 //        print(grads[J] ?? "NIL", grads[a] ?? "NIL", grads[b] ?? "NIL")
         // Test for correctness
-        let epsilon = Variable(eps)
+        let epsilon = Variable<DTensor>(eps)
         let grad_a_numerical = (loss(a + epsilon, b) - loss(a - epsilon, b)) / (Variable(2.0) * epsilon)
         let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
         graph2.fwd()
 //        print(grad_a_numerical.out ?? "NIL")
         let _ = graph2.bwd()
-        func get_grad_a_numericals(_ pos_a: Variable, _ neg_a: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_a_numericals(_ pos_a: Variable<DTensor>, _ neg_a: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_a_numerical = (loss(pos_a, b) - loss(neg_a, b)) / (Variable(2.0) * epsilon)
             let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
             graph2.fwd()
 //            print(grad_a_numerical.out ?? "NIL")
             let _ = graph2.bwd()
-            
+
             let diff_a = abs(grads[a]!.grid[idx] - grad_a_numerical.out!.grid.first!) / max(abs(grads[a]!.grid[idx]), abs(grad_a_numerical.out!.grid.first!))
             XCTAssert(diff_a < bound, "analytical vs numerical gradient check for a")
         }
@@ -239,14 +239,14 @@ final class SML2Tests: XCTestCase {
         graph3.fwd()
 //        print(grad_b_numerical.out ?? "NIL")
         let _ = graph3.bwd()
-        func get_grad_b_numericals(_ pos_b: Variable, _ neg_b: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_b_numericals(_ pos_b: Variable<DTensor>, _ neg_b: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_b_numerical = (loss(a, pos_b) - loss(a, neg_b)) / (Variable(2.0) * epsilon)
             let graph3 = CGraph(grad_b_numerical, seed: DTensor(1))
             graph3.fwd()
 //            print(grad_b_numerical.out ?? "NIL")
             let _ = graph3.bwd()
-            
+
             let diff_b = abs(grads[b]!.grid[idx] - grad_b_numerical.out!.grid.first!) / max(abs(grads[b]!.grid[idx]), abs(grad_b_numerical.out!.grid.first!))
             XCTAssert(diff_b < bound, "analytical vs numerical gradient check for b")
         }
@@ -260,7 +260,7 @@ final class SML2Tests: XCTestCase {
             get_grad_b_numericals(pos_bt, neg_bt, idx: i)
         }
     }
-    
+
     func testMatComplex() throws {
         // Input nodes
         let at = DTensor([[1, 2, 3, 4], [5, 6, 7, 8]])
@@ -271,31 +271,31 @@ final class SML2Tests: XCTestCase {
 //        let bt = Tensor([[9, 10, 11, 12]])
         let b = Variable(bt)
         // Run through function
-        func loss(_ a: Variable, _ b: Variable) -> Variable {
+        func loss(_ a: Variable<DTensor>, _ b: Variable<DTensor>) -> Variable<DTensor> {
             return (a + b - b.pow(2) + b.log()).sum()
         }
         let J = loss(a, b)
         // Forward and backward prop wrt J through session
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         let (_, grads) = session.run(J)
 //        print("----------\n", out)
 //        print(grads[J] ?? "NIL", grads[a] ?? "NIL", grads[b] ?? "NIL")
         // Test for correctness
-        let epsilon = Variable(eps)
+        let epsilon = Variable<DTensor>(eps)
         let grad_a_numerical = (loss(a + epsilon, b) - loss(a - epsilon, b)) / (Variable(2.0) * epsilon)
         let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
         graph2.fwd()
 //        print(grad_a_numerical.out ?? "NIL")
         let _ = graph2.bwd()
-        func get_grad_a_numericals(_ pos_a: Variable, _ neg_a: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_a_numericals(_ pos_a: Variable<DTensor>, _ neg_a: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_a_numerical = (loss(pos_a, b) - loss(neg_a, b)) / (Variable(2.0) * epsilon)
             let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
             graph2.fwd()
 //            print(grad_a_numerical.out ?? "NIL")
             let _ = graph2.bwd()
-            
+
             let diff_a = abs(grads[a]!.grid[idx] - grad_a_numerical.out!.grid.first!) / max(abs(grads[a]!.grid[idx]), abs(grad_a_numerical.out!.grid.first!))
             XCTAssert(diff_a < bound, "analytical vs numerical gradient check for a")
         }
@@ -314,14 +314,14 @@ final class SML2Tests: XCTestCase {
         graph3.fwd()
 //        print(grad_b_numerical.out ?? "NIL")
         let _ = graph3.bwd()
-        func get_grad_b_numericals(_ pos_b: Variable, _ neg_b: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_b_numericals(_ pos_b: Variable<DTensor>, _ neg_b: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_b_numerical = (loss(a, pos_b) - loss(a, neg_b)) / (Variable(2.0) * epsilon)
             let graph3 = CGraph(grad_b_numerical, seed: DTensor(1))
             graph3.fwd()
 //            print(grad_b_numerical.out ?? "NIL")
             let _ = graph3.bwd()
-            
+
             let diff_b = abs(grads[b]!.grid[idx] - grad_b_numerical.out!.grid.first!) / max(abs(grads[b]!.grid[idx]), abs(grad_b_numerical.out!.grid.first!))
             XCTAssert(diff_b < bound, "analytical vs numerical gradient check for b")
         }
@@ -335,7 +335,7 @@ final class SML2Tests: XCTestCase {
             get_grad_b_numericals(pos_bt, neg_bt, idx: i)
         }
     }
-    
+
     func testMatMulSimple() throws {
         // Input nodes
         let at = DTensor([[1, 2, 3, 4], [5, 6, 7, 8]])
@@ -343,31 +343,31 @@ final class SML2Tests: XCTestCase {
         let bt = DTensor([[1, 2], [3, 4], [5, 6], [7, 8]])
         let b = Variable(bt)
         // Run through function
-        func loss(_ a: Variable, _ b: Variable) -> Variable {
+        func loss(_ a: Variable<DTensor>, _ b: Variable<DTensor>) -> Variable<DTensor> {
             return (a <*> b).sum()
         }
         let J = loss(a, b)
         // Forward and backward prop wrt J through session
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         let (_, grads) = session.run(J)
 //        print("----------\n", out)
 //        print(grads[J] ?? "NIL", grads[a] ?? "NIL", grads[b] ?? "NIL")
         // Test for correctness
-        let epsilon = Variable(eps)
+        let epsilon = Variable<DTensor>(eps)
         let grad_a_numerical = (loss(a + epsilon, b) - loss(a - epsilon, b)) / (Variable(2.0) * epsilon)
         let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
         graph2.fwd()
 //        print(grad_a_numerical.out ?? "NIL")
         let _ = graph2.bwd()
-        func get_grad_a_numericals(_ pos_a: Variable, _ neg_a: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_a_numericals(_ pos_a: Variable<DTensor>, _ neg_a: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_a_numerical = (loss(pos_a, b) - loss(neg_a, b)) / (Variable(2.0) * epsilon)
             let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
             graph2.fwd()
 //            print(grad_a_numerical.out ?? "NIL")
             let _ = graph2.bwd()
-            
+
             let diff_a = abs(grads[a]!.grid[idx] - grad_a_numerical.out!.grid.first!) / max(abs(grads[a]!.grid[idx]), abs(grad_a_numerical.out!.grid.first!))
             XCTAssert(diff_a < bound, "analytical vs numerical gradient check for a")
         }
@@ -386,14 +386,14 @@ final class SML2Tests: XCTestCase {
         graph3.fwd()
 //        print(grad_b_numerical.out ?? "NIL")
         let _ = graph3.bwd()
-        func get_grad_b_numericals(_ pos_b: Variable, _ neg_b: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_b_numericals(_ pos_b: Variable<DTensor>, _ neg_b: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_b_numerical = (loss(a, pos_b) - loss(a, neg_b)) / (Variable(2.0) * epsilon)
             let graph3 = CGraph(grad_b_numerical, seed: DTensor(1))
             graph3.fwd()
 //            print(grad_b_numerical.out ?? "NIL")
             let _ = graph3.bwd()
-            
+
             let diff_b = abs(grads[b]!.grid[idx] - grad_b_numerical.out!.grid.first!) / max(abs(grads[b]!.grid[idx]), abs(grad_b_numerical.out!.grid.first!))
             XCTAssert(diff_b < bound, "analytical vs numerical gradient check for b")
         }
@@ -407,7 +407,7 @@ final class SML2Tests: XCTestCase {
             get_grad_b_numericals(pos_bt, neg_bt, idx: i)
         }
     }
-    
+
     func testMatMulSimpleSumDiag() throws {
         // Input nodes
         let at = DTensor([[1, 2, 3, 4], [5, 6, 7, 8]])
@@ -415,31 +415,31 @@ final class SML2Tests: XCTestCase {
         let bt = DTensor([[1, 2], [3, 4], [5, 6], [7, 8]])
         let b = Variable(bt)
         // Run through function
-        func loss(_ a: Variable, _ b: Variable) -> Variable {
+        func loss(_ a: Variable<DTensor>, _ b: Variable<DTensor>) -> Variable<DTensor> {
             return (a <*> b).sumDiag()
         }
         let J = loss(a, b)
         // Forward and backward prop wrt J through session
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         let (_, grads) = session.run(J)
 //        print("----------\n", out)
 //        print(grads[J] ?? "NIL", grads[a] ?? "NIL", grads[b] ?? "NIL")
         // Test for correctness
-        let epsilon = Variable(eps)
+        let epsilon = Variable<DTensor>(eps)
         let grad_a_numerical = (loss(a + epsilon, b) - loss(a - epsilon, b)) / (Variable(2.0) * epsilon)
         let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
         graph2.fwd()
 //        print(grad_a_numerical.out ?? "NIL")
         let _ = graph2.bwd()
-        func get_grad_a_numericals(_ pos_a: Variable, _ neg_a: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_a_numericals(_ pos_a: Variable<DTensor>, _ neg_a: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_a_numerical = (loss(pos_a, b) - loss(neg_a, b)) / (Variable(2.0) * epsilon)
             let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
             graph2.fwd()
 //            print(grad_a_numerical.out ?? "NIL")
             let _ = graph2.bwd()
-            
+
             let diff_a = abs(grads[a]!.grid[idx] - grad_a_numerical.out!.grid.first!) / max(abs(grads[a]!.grid[idx]), abs(grad_a_numerical.out!.grid.first!))
             XCTAssert(diff_a < bound, "analytical vs numerical gradient check for a")
         }
@@ -458,14 +458,14 @@ final class SML2Tests: XCTestCase {
         graph3.fwd()
 //        print(grad_b_numerical.out ?? "NIL")
         let _ = graph3.bwd()
-        func get_grad_b_numericals(_ pos_b: Variable, _ neg_b: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_b_numericals(_ pos_b: Variable<DTensor>, _ neg_b: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_b_numerical = (loss(a, pos_b) - loss(a, neg_b)) / (Variable(2.0) * epsilon)
             let graph3 = CGraph(grad_b_numerical, seed: DTensor(1))
             graph3.fwd()
 //            print(grad_b_numerical.out ?? "NIL")
             let _ = graph3.bwd()
-            
+
             let diff_b = abs(grads[b]!.grid[idx] - grad_b_numerical.out!.grid.first!) / max(abs(grads[b]!.grid[idx]), abs(grad_b_numerical.out!.grid.first!))
             XCTAssert(diff_b < bound, "analytical vs numerical gradient check for b")
         }
@@ -479,7 +479,7 @@ final class SML2Tests: XCTestCase {
             get_grad_b_numericals(pos_bt, neg_bt, idx: i)
         }
     }
-    
+
     func testMatMulMedium() throws {
         // Input nodes
         let at = DTensor([[1.0, 2], [3.0, 4], [5.0, 6], [7.0, 8]])
@@ -488,20 +488,20 @@ final class SML2Tests: XCTestCase {
         let b = Variable(bt)
         let ct = DTensor([[1.0, 2], [3.0, 4], [5.0, 6], [7.0, 8]])
 //        let c = Variable(ct)
-        let c = Placeholder()
+        let c = Placeholder<DTensor>()
         let dt = DTensor([[1], [2]])
 //        let d = Variable(dt)
-        let d = Placeholder()
+        let d = Placeholder<DTensor>()
         // Run through function
-        func loss(_ a: Variable, _ b: Variable, _ c: Variable, _ d: Variable) -> Variable {
+        func loss(_ a: Variable<DTensor>, _ b: Variable<DTensor>, _ c: Variable<DTensor>, _ d: Variable<DTensor>) -> Variable<DTensor> {
             return ((a <*> b) <*> (c <*> d)).sum()
         }
         let J = loss(a, b, c, d)
         // Forward and backward prop wrt J through session
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         // pass the values for our placeholders declared above before running
-        var data = [Placeholder: DTensor]()
+        var data = [Placeholder<DTensor>: DTensor]()
         data[c] = ct
         data[d] = dt
         session.pass(data)
@@ -510,14 +510,14 @@ final class SML2Tests: XCTestCase {
 //        print("----------\n", out)
 //        print(grads[J] ?? "NIL", grads[a] ?? "NIL", grads[b] ?? "NIL", grads[c] ?? "NIL", grads[d] ?? "NIL")
         // Test for correctness
-        let epsilon = Variable(eps)
+        let epsilon = Variable<DTensor>(eps)
         let grad_a_numerical = (loss(a + epsilon, b, c, d) - loss(a - epsilon, b, c, d)) / (Variable(2.0) * epsilon)
         let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
         graph2.fwd()
 //        print(grad_a_numerical.out ?? "NIL")
         let _ = graph2.bwd()
-        func get_grad_a_numericals(_ pos_a: Variable, _ neg_a: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_a_numericals(_ pos_a: Variable<DTensor>, _ neg_a: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_a_numerical = (loss(pos_a, b, c, d) - loss(neg_a, b, c, d)) / (Variable(2.0) * epsilon)
             let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
             graph2.fwd()
@@ -542,8 +542,8 @@ final class SML2Tests: XCTestCase {
         graph3.fwd()
 //        print(grad_b_numerical.out ?? "NIL")
         let _ = graph3.bwd()
-        func get_grad_b_numericals(_ pos_b: Variable, _ neg_b: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_b_numericals(_ pos_b: Variable<DTensor>, _ neg_b: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_b_numerical = (loss(a, pos_b, c, d) - loss(a, neg_b, c, d)) / (Variable(2.0) * epsilon)
             let graph3 = CGraph(grad_b_numerical, seed: DTensor(1))
             graph3.fwd()
@@ -568,8 +568,8 @@ final class SML2Tests: XCTestCase {
         graph4.fwd()
 //        print(grad_c_numerical.out ?? "NIL")
         let _ = graph4.bwd()
-        func get_grad_c_numericals(_ pos_c: Variable, _ neg_c: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_c_numericals(_ pos_c: Variable<DTensor>, _ neg_c: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_c_numerical = (loss(a, b, pos_c, d) - loss(a, b, neg_c, d)) / (Variable(2.0) * epsilon)
             let graph4 = CGraph(grad_c_numerical, seed: DTensor(1))
             graph4.fwd()
@@ -593,14 +593,14 @@ final class SML2Tests: XCTestCase {
         graph5.fwd()
 //        print(grad_d_numerical.out ?? "NIL")
         let _ = graph5.bwd()
-        func get_grad_d_numericals(_ pos_d: Variable, _ neg_d: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_d_numericals(_ pos_d: Variable<DTensor>, _ neg_d: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_d_numerical = (loss(a, b, c, pos_d) - loss(a, b, c, neg_d)) / (Variable(2.0) * epsilon)
             let graph5 = CGraph(grad_d_numerical, seed: DTensor(1))
             graph5.fwd()
 //            print(grad_d_numerical.out ?? "NIL")
             let _ = graph5.bwd()
-            
+
             let diff_d = abs(grads[d]!.grid[idx] - grad_d_numerical.out!.grid.first!) / max(abs(grads[d]!.grid[idx]), abs(grad_d_numerical.out!.grid.first!))
             XCTAssert(diff_d < bound, "analytical vs numerical gradient check for d")
         }
@@ -614,7 +614,7 @@ final class SML2Tests: XCTestCase {
             get_grad_d_numericals(pos_dt, neg_dt, idx: i)
         }
     }
-    
+
     // This is the crazy test
     func testMatMulComplex() throws {
         // Input nodes
@@ -627,27 +627,27 @@ final class SML2Tests: XCTestCase {
         let dt = DTensor([[1], [2]])
         let d = Variable(dt)
         // Run through function
-        func loss(_ a: Variable, _ b: Variable, _ c: Variable, _ d: Variable) -> Variable {
-            var res = Variable(0)
+        func loss(_ a: Variable<DTensor>, _ b: Variable<DTensor>, _ c: Variable<DTensor>, _ d: Variable<DTensor>) -> Variable<DTensor> {
+            var res = Variable<DTensor>(0)
             for _ in 0..<1000 { res = res + ((a <*> b) <*> (c <*> d)).sum() }
             return res
         }
         let J = loss(a, b, c, d)
         // Forward and backward prop wrt J through session
-        let session = Session(parallel: parallel)
+        let session = Session<Adam<DTensor>>(parallel: parallel)
         session.build(J)
         let (_, grads) = session.run(J)
 //        print("----------\n", out)
 //        print(grads[J] ?? "NIL", grads[a] ?? "NIL", grads[b] ?? "NIL", grads[c] ?? "NIL", grads[d] ?? "NIL")
         // Test for correctness
-        let epsilon = Variable(eps)
+        let epsilon = Variable<DTensor>(eps)
         let grad_a_numerical = (loss(a + epsilon, b, c, d) - loss(a - epsilon, b, c, d)) / (Variable(2.0) * epsilon)
         let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
         graph2.fwd()
 //        print(grad_a_numerical.out ?? "NIL")
         let _ = graph2.bwd()
-        func get_grad_a_numericals(_ pos_a: Variable, _ neg_a: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_a_numericals(_ pos_a: Variable<DTensor>, _ neg_a: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_a_numerical = (loss(pos_a, b, c, d) - loss(neg_a, b, c, d)) / (Variable(2.0) * epsilon)
             let graph2 = CGraph(grad_a_numerical, seed: DTensor(1))
             graph2.fwd()
@@ -672,8 +672,8 @@ final class SML2Tests: XCTestCase {
         graph3.fwd()
 //        print(grad_b_numerical.out ?? "NIL")
         let _ = graph3.bwd()
-        func get_grad_b_numericals(_ pos_b: Variable, _ neg_b: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_b_numericals(_ pos_b: Variable<DTensor>, _ neg_b: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_b_numerical = (loss(a, pos_b, c, d) - loss(a, neg_b, c, d)) / (Variable(2.0) * epsilon)
             let graph3 = CGraph(grad_b_numerical, seed: DTensor(1))
             graph3.fwd()
@@ -698,8 +698,8 @@ final class SML2Tests: XCTestCase {
         graph4.fwd()
 //        print(grad_c_numerical.out ?? "NIL")
         let _ = graph4.bwd()
-        func get_grad_c_numericals(_ pos_c: Variable, _ neg_c: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_c_numericals(_ pos_c: Variable<DTensor>, _ neg_c: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_c_numerical = (loss(a, b, pos_c, d) - loss(a, b, neg_c, d)) / (Variable(2.0) * epsilon)
             let graph4 = CGraph(grad_c_numerical, seed: DTensor(1))
             graph4.fwd()
@@ -723,14 +723,14 @@ final class SML2Tests: XCTestCase {
         graph5.fwd()
 //        print(grad_d_numerical.out ?? "NIL")
         let _ = graph5.bwd()
-        func get_grad_d_numericals(_ pos_d: Variable, _ neg_d: Variable, idx: Int) {
-            let epsilon = Variable(eps)
+        func get_grad_d_numericals(_ pos_d: Variable<DTensor>, _ neg_d: Variable<DTensor>, idx: Int) {
+            let epsilon = Variable<DTensor>(eps)
             let grad_d_numerical = (loss(a, b, c, pos_d) - loss(a, b, c, neg_d)) / (Variable(2.0) * epsilon)
             let graph5 = CGraph(grad_d_numerical, seed: DTensor(1))
             graph5.fwd()
 //            print(grad_d_numerical.out ?? "NIL")
             let _ = graph5.bwd()
-            
+
             let diff_d = abs(grads[d]!.grid[idx] - grad_d_numerical.out!.grid.first!) / max(abs(grads[d]!.grid[idx]), abs(grad_d_numerical.out!.grid.first!))
             XCTAssert(diff_d < bound, "analytical vs numerical gradient check for d")
         }
