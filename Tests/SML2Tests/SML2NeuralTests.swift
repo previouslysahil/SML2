@@ -15,7 +15,7 @@ final class SML2NeuralTests: XCTestCase {
     let bound = 0.0001
     
     func testLinear() throws {
-        let dt = Tensor([[1, 2, 3, 4, 5, 6], [12, 23, 34, 45, 56, 67], [13, 24, 35, 46, 57, 68], [19, 28, 37, 46, 55, 64]]).transpose()
+        let dt = DTensor([[1, 2, 3, 4, 5, 6], [12, 23, 34, 45, 56, 67], [13, 24, 35, 46, 57, 68], [19, 28, 37, 46, 55, 64]]).transpose()
 //        let d = Variable(dt)
 //        let layer = Linear(d, to: 6, out: 4)
         let layer = Linear(to: 6, out: 4)
@@ -31,9 +31,9 @@ final class SML2NeuralTests: XCTestCase {
         // Weights init'd randomly so this makes sure they are the same random vals for both weight matrices
         let wtTest = layer.weight.out!
         let wTest = Variable(wtTest)
-        let dtTest = Tensor([[1, 2, 3, 4, 5, 6], [12, 23, 34, 45, 56, 67], [13, 24, 35, 46, 57, 68], [19, 28, 37, 46, 55, 64]]).transpose()
+        let dtTest = DTensor([[1, 2, 3, 4, 5, 6], [12, 23, 34, 45, 56, 67], [13, 24, 35, 46, 57, 68], [19, 28, 37, 46, 55, 64]]).transpose()
         let dTest = Variable(dtTest)
-        let bt = Tensor(shape: [4, 1], repeating: 0.01)
+        let bt = DTensor(shape: [4, 1], repeating: 0.01)
         let bTest = Variable(bt)
         func loss(_ a: Variable, _ b: Variable, _ c: Variable) -> Variable {
             return (a <*> b + c).square().sum()
@@ -48,14 +48,14 @@ final class SML2NeuralTests: XCTestCase {
         // Test for correctness
         let epsilon = Variable(eps)
         let grad_wTest_numerical = (loss(wTest + epsilon, dTest, bTest) - loss(wTest - epsilon, dTest, bTest)) / (Variable(2.0) * epsilon)
-        let graph2 = CGraph(grad_wTest_numerical, seed: Tensor(1))
+        let graph2 = CGraph(grad_wTest_numerical, seed: DTensor(1))
         graph2.fwd()
 //        print(grad_wTest_numerical.out ?? "NIL")
         let _ = graph2.bwd()
         func get_grad_wTest_numericals(_ pos_wTest: Variable, _ neg_wTest: Variable, idx: Int) {
             let epsilon = Variable(eps)
             let grad_wTest_numerical = (loss(pos_wTest, dTest, bTest) - loss(neg_wTest, dTest, bTest)) / (Variable(2.0) * epsilon)
-            let graph2 = CGraph(grad_wTest_numerical, seed: Tensor(1))
+            let graph2 = CGraph(grad_wTest_numerical, seed: DTensor(1))
             graph2.fwd()
 //            print(grad_wTest_numerical.out ?? "NIL")
             let _ = graph2.bwd()
@@ -68,20 +68,20 @@ final class SML2NeuralTests: XCTestCase {
             pos_grid[i] = pos_grid[i] + eps
             var neg_grid = wtTest.grid
             neg_grid[i] = neg_grid[i] - eps
-            let pos_wtTest = Variable(Tensor(shape: wtTest.shape, grid: pos_grid))
-            let neg_wtTest = Variable(Tensor(shape: wtTest.shape, grid: neg_grid))
+            let pos_wtTest = Variable(DTensor(shape: wtTest.shape, grid: pos_grid))
+            let neg_wtTest = Variable(DTensor(shape: wtTest.shape, grid: neg_grid))
             get_grad_wTest_numericals(pos_wtTest, neg_wtTest, idx: i)
         }
 //        print("----------")
         let grad_dTest_numerical = (loss(wTest, dTest + epsilon, bTest) - loss(wTest, dTest - epsilon, bTest)) / (Variable(2.0) * epsilon)
-        let graph3 = CGraph(grad_dTest_numerical, seed: Tensor(1))
+        let graph3 = CGraph(grad_dTest_numerical, seed: DTensor(1))
         graph3.fwd()
 //        print(grad_dTest_numerical.out ?? "NIL")
         let _ = graph3.bwd()
         func get_grad_dTest_numericals(_ pos_dTest: Variable, _ neg_dTest: Variable, idx: Int) {
             let epsilon = Variable(eps)
             let grad_dTest_numerical = (loss(wTest, pos_dTest, bTest) - loss(wTest, neg_dTest, bTest)) / (Variable(2.0) * epsilon)
-            let graph3 = CGraph(grad_dTest_numerical, seed: Tensor(1))
+            let graph3 = CGraph(grad_dTest_numerical, seed: DTensor(1))
             graph3.fwd()
 //            print(grad_dTest_numerical.out ?? "NIL")
             let _ = graph3.bwd()
@@ -94,20 +94,20 @@ final class SML2NeuralTests: XCTestCase {
             pos_grid[i] = pos_grid[i] + eps
             var neg_grid = dtTest.grid
             neg_grid[i] = neg_grid[i] - eps
-            let pos_dtTest = Variable(Tensor(shape: dtTest.shape, grid: pos_grid))
-            let neg_dtTest = Variable(Tensor(shape: dtTest.shape, grid: neg_grid))
+            let pos_dtTest = Variable(DTensor(shape: dtTest.shape, grid: pos_grid))
+            let neg_dtTest = Variable(DTensor(shape: dtTest.shape, grid: neg_grid))
             get_grad_dTest_numericals(pos_dtTest, neg_dtTest, idx: i)
         }
 //        print("----------")
         let grad_bTest_numerical = (loss(wTest, dTest, bTest + epsilon) - loss(wTest, dTest, bTest - epsilon)) / (Variable(2.0) * epsilon)
-        let graph4 = CGraph(grad_bTest_numerical, seed: Tensor(1))
+        let graph4 = CGraph(grad_bTest_numerical, seed: DTensor(1))
         graph4.fwd()
 //        print(grad_bTest_numerical.out ?? "NIL")
         let _ = graph4.bwd()
         func get_grad_bTest_numericals(_ pos_bTest: Variable, _ neg_bTest: Variable, idx: Int) {
             let epsilon = Variable(eps)
             let grad_bTest_numerical = (loss(wTest, dTest, pos_bTest) - loss(wTest, dTest, neg_bTest)) / (Variable(2.0) * epsilon)
-            let graph4 = CGraph(grad_bTest_numerical, seed: Tensor(1))
+            let graph4 = CGraph(grad_bTest_numerical, seed: DTensor(1))
             graph4.fwd()
 //            print(grad_bTest_numerical.out ?? "NIL")
             let _ = graph4.bwd()
@@ -120,8 +120,8 @@ final class SML2NeuralTests: XCTestCase {
             pos_grid[i] = pos_grid[i] + eps
             var neg_grid = bt.grid
             neg_grid[i] = neg_grid[i] - eps
-            let pos_btTest = Variable(Tensor(shape: bt.shape, grid: pos_grid))
-            let neg_btTest = Variable(Tensor(shape: bt.shape, grid: neg_grid))
+            let pos_btTest = Variable(DTensor(shape: bt.shape, grid: pos_grid))
+            let neg_btTest = Variable(DTensor(shape: bt.shape, grid: neg_grid))
             get_grad_bTest_numericals(pos_btTest, neg_btTest, idx: i)
         }
         // Makes sure that our hand computed linear results and our linear layers results are identical
@@ -138,7 +138,7 @@ final class SML2NeuralTests: XCTestCase {
         let J = sequence.predicted.sum()
         let session = Session(parallel: parallel)
         session.build(J)
-        let dt = Tensor([[1, 2, 3], [12, 23, 34], [13, 24, 35], [19, 28, 37]]).transpose()
+        let dt = DTensor([[1, 2, 3], [12, 23, 34], [13, 24, 35], [19, 28, 37]]).transpose()
         session.pass([sequence.input: dt])
         let (out, grads) = session.run(J)
         print(out)
@@ -146,10 +146,10 @@ final class SML2NeuralTests: XCTestCase {
     }
     
     func testSigmoid() throws {
-        let dt = Tensor([[1, 2, 3, 4], [5, 6, 7, 8]])
+        let dt = DTensor([[1, 2, 3, 4], [5, 6, 7, 8]])
         let d = Variable(dt)
         let layer = Sigmoid(d)
-        let J = (layer <*> Variable(Tensor([[1, 2, 3, 4], [5, 6, 7, 8]]).transpose())).sum()
+        let J = (layer <*> Variable(DTensor([[1, 2, 3, 4], [5, 6, 7, 8]]).transpose())).sum()
         let session = Session(parallel: parallel)
         session.build(J)
         session.pass([layer.input: dt])
@@ -158,10 +158,10 @@ final class SML2NeuralTests: XCTestCase {
 //        print(grads[J] ?? "NIL", grads[layer.input] ?? "Nil")
         
         // NOW LETS TEST IF THIS LAYER IS CORRECT BY DOING IT BY 'HAND'
-        let dtTest = Tensor([[1, 2, 3, 4], [5, 6, 7, 8]])
+        let dtTest = DTensor([[1, 2, 3, 4], [5, 6, 7, 8]])
         let dTest = Variable(dtTest)
         func loss(_ a: Variable) -> Variable {
-            return ((Variable(1.0) / (Variable(1.0) + (Negate(a)).exp())) <*> Variable(Tensor([[1, 2, 3, 4], [5, 6, 7, 8]]).transpose())).sum()
+            return ((Variable(1.0) / (Variable(1.0) + (Negate(a)).exp())) <*> Variable(DTensor([[1, 2, 3, 4], [5, 6, 7, 8]]).transpose())).sum()
         }
         let JTest = loss(dTest)
         // Forward and backward prop wrt J through session
@@ -173,14 +173,14 @@ final class SML2NeuralTests: XCTestCase {
         // Test for correctness
         let epsilon = Variable(eps)
         let grad_dTest_numerical = (loss(dTest + epsilon) - loss(dTest - epsilon)) / (Variable(2.0) * epsilon)
-        let graph3 = CGraph(grad_dTest_numerical, seed: Tensor(1))
+        let graph3 = CGraph(grad_dTest_numerical, seed: DTensor(1))
         graph3.fwd()
     //        print(grad_dTest_numerical.out ?? "NIL")
         let _ = graph3.bwd()
         func get_grad_dTest_numericals(_ pos_dTest: Variable, _ neg_dTest: Variable, idx: Int) {
             let epsilon = Variable(eps)
             let grad_dTest_numerical = (loss(pos_dTest) - loss(neg_dTest)) / (Variable(2.0) * epsilon)
-            let graph3 = CGraph(grad_dTest_numerical, seed: Tensor(1))
+            let graph3 = CGraph(grad_dTest_numerical, seed: DTensor(1))
             graph3.fwd()
 //            print(grad_dTest_numerical.out ?? "NIL")
             let _ = graph3.bwd()
@@ -193,8 +193,8 @@ final class SML2NeuralTests: XCTestCase {
             pos_grid[i] = pos_grid[i] + eps
             var neg_grid = dtTest.grid
             neg_grid[i] = neg_grid[i] - eps
-            let pos_dtTest = Variable(Tensor(shape: dtTest.shape, grid: pos_grid))
-            let neg_dtTest = Variable(Tensor(shape: dtTest.shape, grid: neg_grid))
+            let pos_dtTest = Variable(DTensor(shape: dtTest.shape, grid: pos_grid))
+            let neg_dtTest = Variable(DTensor(shape: dtTest.shape, grid: neg_grid))
             get_grad_dTest_numericals(pos_dtTest, neg_dtTest, idx: i)
         }
         // Makes sure that our hand computed linear results and our linear layers results are identical
@@ -213,7 +213,7 @@ final class SML2NeuralTests: XCTestCase {
         let J = sequence.predicted.sum()
         let session = Session(parallel: parallel)
         session.build(J)
-        let dt = Tensor([[1, 2, 3], [12, 23, 34], [13, 24, 35], [19, 28, 37]]).transpose()
+        let dt = DTensor([[1, 2, 3], [12, 23, 34], [13, 24, 35], [19, 28, 37]]).transpose()
         session.pass([sequence.input: dt])
         let (out, grads) = session.run(J)
         print(out)
@@ -254,15 +254,15 @@ final class SML2NeuralTests: XCTestCase {
         let J = avg * (sequence.predicted - expected).pow(2).sum() + avg_lm * (lm * sequence.regularizer)
         let session = Session(parallel: parallel)
         session.build(J)
-        let X: Tensor = process.zscore(Tensor(shuffledData), type: .data)
-        let Y: Tensor = Tensor(shuffledLabels)
+        let X: DTensor = process.zscore(DTensor(shuffledData), type: .data)
+        let Y: DTensor = DTensor(shuffledLabels)
         let optim = Adam()
         // Minibatch
         let b = 100
         // Set up our number of batches
         let batches = Int(ceil(Double(X.shape[0]) / Double(b)))
         // Set up all of our mini batchs in advance
-        var mini_batches = [(Tensor, Tensor)](repeating: (Tensor(shape: [], grid: []), Tensor(shape: [], grid: [])), count: batches)
+        var mini_batches = [(DTensor, DTensor)](repeating: (DTensor(shape: [], grid: []), DTensor(shape: [], grid: [])), count: batches)
         // Partition X and Y
         for s in 0..<batches {
             // Get the indicies for our batches
@@ -286,7 +286,7 @@ final class SML2NeuralTests: XCTestCase {
                 // Get mini batch size
                 let m_mini = Double(XT_mini.shape[1])
                 // Reset our placeholders for our input data and avg coefficient
-                session.pass([sequence.input: XT_mini, expected: YT_mini, avg: Tensor(1.0 / (2.0 * m_mini)), avg_lm: Tensor(1.0 / (2.0 * m_mini))])
+                session.pass([sequence.input: XT_mini, expected: YT_mini, avg: DTensor(1.0 / (2.0 * m_mini)), avg_lm: DTensor(1.0 / (2.0 * m_mini))])
                 // Forward and backward
                 let (out, grads) = session.run(J)
                 // Add to loss
@@ -305,7 +305,7 @@ final class SML2NeuralTests: XCTestCase {
         // Predict on example
         let test1: [Double] = [0.45, 0.21, 0.89]
         // Rset our placeholder for our input data
-        session.pass([sequence.input: process.zscore(Tensor(test1, type: .column), type: .pred)])
+        session.pass([sequence.input: process.zscore(DTensor(test1, type: .column), type: .pred)])
         // Stop forwarding after we have our predicted (other dependencies for J may fire during forward if they have a low dependency count despite not contributing to sequence.predicted sub graph)
         let (out, _) = session.run(J, till: sequence.predicted)
         // Should be [0.55, 0.79, 0.11]
@@ -351,15 +351,15 @@ final class SML2NeuralTests: XCTestCase {
         let J = avg * (sequence.predicted - expected).pow(2).sum() + avg_lm * (lm * sequence.regularizer)
         let session = Session(parallel: parallel)
         session.build(J)
-        let X: Tensor = process.zscore(Tensor(shuffledData), type: .data)
-        let Y: Tensor = Tensor(shuffledLabels)
+        let X: DTensor = process.zscore(DTensor(shuffledData), type: .data)
+        let Y: DTensor = DTensor(shuffledLabels)
         let optim = Adam()
         // Minibatch
         let b = 100
         // Set up our number of batches
         let batches = Int(ceil(Double(X.shape[0]) / Double(b)))
         // Set up all of our mini batchs in advance
-        var mini_batches = [(Tensor, Tensor)](repeating: (Tensor(shape: [], grid: []), Tensor(shape: [], grid: [])), count: batches)
+        var mini_batches = [(DTensor, DTensor)](repeating: (DTensor(shape: [], grid: []), DTensor(shape: [], grid: [])), count: batches)
         // Partition X and Y
         for s in 0..<batches {
             // Get the indicies for our batches
@@ -383,7 +383,7 @@ final class SML2NeuralTests: XCTestCase {
                 // Get mini batch size
                 let m_mini = Double(XT_mini.shape[1])
                 // Reset our placeholders for our input data and avg coefficient
-                session.pass([sequence.input: XT_mini, expected: YT_mini, avg: Tensor(1.0 / (2.0 * m_mini)), avg_lm: Tensor(1.0 / (2.0 * m_mini))])
+                session.pass([sequence.input: XT_mini, expected: YT_mini, avg: DTensor(1.0 / (2.0 * m_mini)), avg_lm: DTensor(1.0 / (2.0 * m_mini))])
                 // Forward and backward
                 let (out, grads) = session.run(J)
                 // Add to loss
@@ -409,7 +409,7 @@ final class SML2NeuralTests: XCTestCase {
         let tests = [test1, test2, test3, test4, test5, test6]
         for test in tests {
             // Rset our placeholder for our input data
-            session.pass([sequence.input: process.zscore(Tensor(test, type: .column), type: .pred)])
+            session.pass([sequence.input: process.zscore(DTensor(test, type: .column), type: .pred)])
             // Stop forwarding after we have our predicted (other dependencies for J may fire during forward if they have a low dependency count despite not contributing to sequence.predicted sub graph)
             let (out, _) = session.run(J, till: sequence.predicted)
             // Should be class
@@ -464,15 +464,15 @@ final class SML2NeuralTests: XCTestCase {
         let J = avg * Constant(-1.0) * ((sequence.predicted.transpose() + Constant(0.00000001)).log() <*> expected + ((Constant(1.0) - sequence.predicted.transpose() + Constant(0.00000001)).log() <*> (Constant(1.0) - expected))).sumDiag() + avg_lm * (lm * sequence.regularizer)
         let session = Session(parallel: parallel)
         session.build(J)
-        let X: Tensor = process.zscore(Tensor(shuffledData), type: .data)
-        let Y: Tensor = Tensor(shuffledLabels)
+        let X: DTensor = process.zscore(DTensor(shuffledData), type: .data)
+        let Y: DTensor = DTensor(shuffledLabels)
         let optim = Adam()
         // Minibatch
         let b = 100
         // Set up our number of batches
         let batches = Int(ceil(Double(X.shape[0]) / Double(b)))
         // Set up all of our mini batchs in advance
-        var mini_batches = [(Tensor, Tensor)](repeating: (Tensor(shape: [], grid: []), Tensor(shape: [], grid: [])), count: batches)
+        var mini_batches = [(DTensor, DTensor)](repeating: (DTensor(shape: [], grid: []), DTensor(shape: [], grid: [])), count: batches)
         // Partition X and Y
         for s in 0..<batches {
             // Get the indicies for our batches
@@ -496,7 +496,7 @@ final class SML2NeuralTests: XCTestCase {
                 // Get mini batch size
                 let m_mini = Double(XT_mini.shape[1])
                 // Reset our placeholders for our input data and avg coefficient
-                session.pass([sequence.input: XT_mini, expected: YT_mini, avg: Tensor(1.0 / (m_mini)), avg_lm: Tensor(1.0 / (m_mini))])
+                session.pass([sequence.input: XT_mini, expected: YT_mini, avg: DTensor(1.0 / (m_mini)), avg_lm: DTensor(1.0 / (m_mini))])
                 // Forward and backward
                 let (out, grads) = session.run(J)
                 // Add to loss
@@ -527,7 +527,7 @@ final class SML2NeuralTests: XCTestCase {
         let tests = [test1, test2, test3, test4, test5, test6, test7, test8, test9, test10, test11]
         for test in tests {
             // Rset our placeholder for our input data
-            session.pass([sequence.input: process.zscore(Tensor(test, type: .column), type: .pred)])
+            session.pass([sequence.input: process.zscore(DTensor(test, type: .column), type: .pred)])
             // Stop forwarding after we have our predicted (other dependencies for J may fire during forward if they have a low dependency count despite not contributing to sequence.predicted sub graph)
             let (out, _) = session.run(J, till: sequence.predicted)
             // Should be class
@@ -539,16 +539,16 @@ final class SML2NeuralTests: XCTestCase {
         var pad = false
         pad = false
         
-        let dt1 = Tensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]])
+        let dt1 = DTensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]])
         let conv1 = Conv2D(to: 2, out: 1, size: 3, pad: pad)
         
-        let dt2 = Tensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]])
+        let dt2 = DTensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]])
         let conv2 = Conv2D(to: 2, out: 2, size: 3, pad: pad)
         
-        let dt3 = Tensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]])
+        let dt3 = DTensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]])
         let conv3 = Conv2D(to: 1, out: 1, size: 3, pad: pad)
         
-        let dt4 = Tensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]])
+        let dt4 = DTensor([[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]])
         let conv4 = Conv2D(to: 1, out: 4, size: 3, pad: pad)
         
         let DT = [dt1, dt2, dt3, dt4]
@@ -571,13 +571,13 @@ final class SML2NeuralTests: XCTestCase {
             let kernelTest = conv.kernel.out!
             let biasTest = conv.bias.out!
             let dataTest = conv.input.out!
-            func loss(_ data: Tensor, _ kernel: Tensor, _ bias: Tensor) -> Double {
-                var out: Tensor?
+            func loss(_ data: DTensor, _ kernel: DTensor, _ bias: DTensor) -> Double {
+                var out: DTensor?
                 if kernel.shape.count == 4 && data.shape.count == 3 && kernel.shape[1] == data.shape[0] {
                     // First get the shape of our 2D Tensor after convolution
                     let mat_shape = pad ? Array(data.shape[1...2]).pad_shape((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid) : Array(data.shape[1...2]).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid)
                     // Now we can make the out shape using the 2D Tensor (matrix) with a depth of the number of kernels since out must have the same depth as the number of kernels
-                    out = Tensor(shape: [kernel.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
+                    out = DTensor(shape: [kernel.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
                     // Now for each kernel we convolve with our data to produce our dth depth for out
                     for d in 0..<kernel.shape[0] {
                         // Get the dth kernel
@@ -597,7 +597,7 @@ final class SML2NeuralTests: XCTestCase {
             }
             let outTest = loss(dataTest, kernelTest, biasTest)
             // Test data
-            func get_grad_data_numericals(_ pos_data: Tensor, _ neg_data: Tensor, idx: Int) {
+            func get_grad_data_numericals(_ pos_data: DTensor, _ neg_data: DTensor, idx: Int) {
                 let grad_data_numerical = (loss(pos_data, kernelTest, biasTest) - loss(neg_data, kernelTest, biasTest)) / (2.0 * eps)
                 
                 let diff_data = abs(grads[conv.input]!.grid[idx] - grad_data_numerical) / max(abs(grads[conv.input]!.grid[idx]), abs(grad_data_numerical))
@@ -609,12 +609,12 @@ final class SML2NeuralTests: XCTestCase {
                 pos_grid[i] = pos_grid[i] + eps
                 var neg_grid = dataTest.grid
                 neg_grid[i] = neg_grid[i] - eps
-                let pos_data = Tensor(shape: dataTest.shape, grid: pos_grid)
-                let neg_data = Tensor(shape: dataTest.shape, grid: neg_grid)
+                let pos_data = DTensor(shape: dataTest.shape, grid: pos_grid)
+                let neg_data = DTensor(shape: dataTest.shape, grid: neg_grid)
                 get_grad_data_numericals(pos_data, neg_data, idx: i)
             }
             // Test kernel
-            func get_grad_kernel_numericals(_ pos_kernel: Tensor, _ neg_kernel: Tensor, idx: Int) {
+            func get_grad_kernel_numericals(_ pos_kernel: DTensor, _ neg_kernel: DTensor, idx: Int) {
                 let grad_kernel_numerical = (loss(dataTest, pos_kernel, biasTest) - loss(dataTest, neg_kernel, biasTest)) / (2.0 * eps)
 
                 let diff_kernel = abs(grads[conv.kernel]!.grid[idx] - grad_kernel_numerical) / max(abs(grads[conv.kernel]!.grid[idx]), abs(grad_kernel_numerical))
@@ -626,12 +626,12 @@ final class SML2NeuralTests: XCTestCase {
                 pos_grid[i] = pos_grid[i] + eps
                 var neg_grid = kernelTest.grid
                 neg_grid[i] = neg_grid[i] - eps
-                let pos_kernel = Tensor(shape: kernelTest.shape, grid: pos_grid)
-                let neg_kernel = Tensor(shape: kernelTest.shape, grid: neg_grid)
+                let pos_kernel = DTensor(shape: kernelTest.shape, grid: pos_grid)
+                let neg_kernel = DTensor(shape: kernelTest.shape, grid: neg_grid)
                 get_grad_kernel_numericals(pos_kernel, neg_kernel, idx: i)
             }
             // Test bias
-            func get_grad_bias_numericals(_ pos_bias: Tensor, _ neg_bias: Tensor, idx: Int) {
+            func get_grad_bias_numericals(_ pos_bias: DTensor, _ neg_bias: DTensor, idx: Int) {
                 let grad_bias_numerical = (loss(dataTest, kernelTest, pos_bias) - loss(dataTest, kernelTest, neg_bias)) / (2.0 * eps)
                 
                 let diff_bias = abs(grads[conv.bias]!.grid[idx] - grad_bias_numerical) / max(abs(grads[conv.bias]!.grid[idx]), abs(grad_bias_numerical))
@@ -643,8 +643,8 @@ final class SML2NeuralTests: XCTestCase {
                 pos_grid[i] = pos_grid[i] + eps
                 var neg_grid = biasTest.grid
                 neg_grid[i] = neg_grid[i] - eps
-                let pos_bias = Tensor(shape: biasTest.shape, grid: pos_grid)
-                let neg_bias = Tensor(shape: biasTest.shape, grid: neg_grid)
+                let pos_bias = DTensor(shape: biasTest.shape, grid: pos_grid)
+                let neg_bias = DTensor(shape: biasTest.shape, grid: neg_grid)
                 get_grad_bias_numericals(pos_bias, neg_bias, idx: i)
             }
             // Makes sure that our hand computed linear results and our linear layers results are identical
@@ -663,22 +663,22 @@ final class SML2NeuralTests: XCTestCase {
         
         let dt11: [[[Double]]] = [[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]]
         let dt12 = dt11.map { $0.map { $0.map { $0 + 394 } } }
-        let dt1 = Tensor([dt11, dt12])
+        let dt1 = DTensor([dt11, dt12])
         let conv1 = Conv2D(to: 2, out: 1, size: 3, pad: pad)
         
         let dt21: [[[Double]]] = [[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]]
         let dt22 = dt21.map { $0.map { $0.map { $0 + 58 } } }
-        let dt2 = Tensor([dt21, dt22])
+        let dt2 = DTensor([dt21, dt22])
         let conv2 = Conv2D(to: 2, out: 2, size: 3, pad: pad)
         
         let dt31: [[[Double]]] = [[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]]
         let dt32 = dt31.map { $0.map { $0.map { $0 + 23 } } }
-        let dt3 = Tensor([dt31, dt32])
+        let dt3 = DTensor([dt31, dt32])
         let conv3 = Conv2D(to: 1, out: 1, size: 3, pad: pad)
         
         let dt41: [[[Double]]] = [[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]]]
         let dt42 = dt41.map { $0.map { $0.map { $0 + 21 } } }
-        let dt4 = Tensor([dt41, dt42])
+        let dt4 = DTensor([dt41, dt42])
         let conv4 = Conv2D(to: 1, out: 4, size: 3, pad: pad)
         
         let DT = [dt1, dt2, dt3, dt4]
@@ -701,13 +701,13 @@ final class SML2NeuralTests: XCTestCase {
             let kernelTest = conv.kernel.out!
             let biasTest = conv.bias.out!
             let dataTest = conv.input.out!
-            func loss(_ data: Tensor, _ kernel: Tensor, _ bias: Tensor) -> Double {
-                var out: Tensor?
+            func loss(_ data: DTensor, _ kernel: DTensor, _ bias: DTensor) -> Double {
+                var out: DTensor?
                 if kernel.shape.count == 4 && data.shape.count == 3 && kernel.shape[1] == data.shape[0] {
                     // First get the shape of our 2D Tensor after convolution
                     let mat_shape = pad ? Array(data.shape[1...2]).pad_shape((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid) : Array(data.shape[1...2]).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid)
                     // Now we can make the out shape using the 2D Tensor (matrix) with a depth of the number of kernels since out must have the same depth as the number of kernels
-                    out = Tensor(shape: [kernel.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
+                    out = DTensor(shape: [kernel.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
                     // Now for each kernel we convolve with our data to produce our dth depth for out
                     for d in 0..<kernel.shape[0] {
                         // Get the dth kernel
@@ -725,7 +725,7 @@ final class SML2NeuralTests: XCTestCase {
                     // pad to make shape a same convolution if we have padding
                     let mat_shape = pad ? Array(data.shape[2...3]).pad_shape((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid) : Array(data.shape[2...3]).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid)
                     // Now we can make the out shape using the 2D Tensor (matrix) with a depth of the number of kernels since out must have the same depth as the number of kernels and a count of the number of input images since we are outting the same number of images
-                    out = Tensor(shape: [data.shape[0], kernel.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
+                    out = DTensor(shape: [data.shape[0], kernel.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
                     // Now for each image we do a convolution
                     for n in 0..<data.shape[0] {
                         // Now for each kernel we convolve with our data to produce our dth depth for out
@@ -748,7 +748,7 @@ final class SML2NeuralTests: XCTestCase {
             }
             let outTest = loss(dataTest, kernelTest, biasTest)
             // Test data
-            func get_grad_data_numericals(_ pos_data: Tensor, _ neg_data: Tensor, idx: Int) {
+            func get_grad_data_numericals(_ pos_data: DTensor, _ neg_data: DTensor, idx: Int) {
                 let grad_data_numerical = (loss(pos_data, kernelTest, biasTest) - loss(neg_data, kernelTest, biasTest)) / (2.0 * eps)
                 
                 let diff_data = abs(grads[conv.input]!.grid[idx] - grad_data_numerical) / max(abs(grads[conv.input]!.grid[idx]), abs(grad_data_numerical))
@@ -760,12 +760,12 @@ final class SML2NeuralTests: XCTestCase {
                 pos_grid[i] = pos_grid[i] + eps
                 var neg_grid = dataTest.grid
                 neg_grid[i] = neg_grid[i] - eps
-                let pos_data = Tensor(shape: dataTest.shape, grid: pos_grid)
-                let neg_data = Tensor(shape: dataTest.shape, grid: neg_grid)
+                let pos_data = DTensor(shape: dataTest.shape, grid: pos_grid)
+                let neg_data = DTensor(shape: dataTest.shape, grid: neg_grid)
                 get_grad_data_numericals(pos_data, neg_data, idx: i)
             }
             // Test kernel
-            func get_grad_kernel_numericals(_ pos_kernel: Tensor, _ neg_kernel: Tensor, idx: Int) {
+            func get_grad_kernel_numericals(_ pos_kernel: DTensor, _ neg_kernel: DTensor, idx: Int) {
                 let grad_kernel_numerical = (loss(dataTest, pos_kernel, biasTest) - loss(dataTest, neg_kernel, biasTest)) / (2.0 * eps)
 
                 let diff_kernel = abs(grads[conv.kernel]!.grid[idx] - grad_kernel_numerical) / max(abs(grads[conv.kernel]!.grid[idx]), abs(grad_kernel_numerical))
@@ -778,12 +778,12 @@ final class SML2NeuralTests: XCTestCase {
                 pos_grid[i] = pos_grid[i] + eps
                 var neg_grid = kernelTest.grid
                 neg_grid[i] = neg_grid[i] - eps
-                let pos_kernel = Tensor(shape: kernelTest.shape, grid: pos_grid)
-                let neg_kernel = Tensor(shape: kernelTest.shape, grid: neg_grid)
+                let pos_kernel = DTensor(shape: kernelTest.shape, grid: pos_grid)
+                let neg_kernel = DTensor(shape: kernelTest.shape, grid: neg_grid)
                 get_grad_kernel_numericals(pos_kernel, neg_kernel, idx: i)
             }
             // Test bias
-            func get_grad_bias_numericals(_ pos_bias: Tensor, _ neg_bias: Tensor, idx: Int) {
+            func get_grad_bias_numericals(_ pos_bias: DTensor, _ neg_bias: DTensor, idx: Int) {
                 let grad_bias_numerical = (loss(dataTest, kernelTest, pos_bias) - loss(dataTest, kernelTest, neg_bias)) / (2.0 * eps)
                 
                 let diff_bias = abs(grads[conv.bias]!.grid[idx] - grad_bias_numerical) / max(abs(grads[conv.bias]!.grid[idx]), abs(grad_bias_numerical))
@@ -795,8 +795,8 @@ final class SML2NeuralTests: XCTestCase {
                 pos_grid[i] = pos_grid[i] + eps
                 var neg_grid = biasTest.grid
                 neg_grid[i] = neg_grid[i] - eps
-                let pos_bias = Tensor(shape: biasTest.shape, grid: pos_grid)
-                let neg_bias = Tensor(shape: biasTest.shape, grid: neg_grid)
+                let pos_bias = DTensor(shape: biasTest.shape, grid: pos_grid)
+                let neg_bias = DTensor(shape: biasTest.shape, grid: neg_grid)
                 get_grad_bias_numericals(pos_bias, neg_bias, idx: i)
             }
             // Makes sure that our hand computed linear results and our linear layers results are identical
@@ -818,7 +818,7 @@ final class SML2NeuralTests: XCTestCase {
         let dt1: [[Double]] = [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10], [11, 12, 13, 14, 15], [16, 17, 18, 19, 20], [21, 22, 23, 24, 25]]
         let dt2 = dt1.map { $0.map { $0 + 24 } }
         // First is just an image with depth 1, second is image with depth 2, third is 2 images with depth 2
-        let ds: [Tensor] = [Tensor([dt1]), Tensor([dt1, dt2]), Tensor([[dt1, dt2], [dt1, dt2].map { $0.map { $0.map { $0 + 392 } } }])]
+        let ds: [DTensor] = [DTensor([dt1]), DTensor([dt1, dt2]), DTensor([[dt1, dt2], [dt1, dt2].map { $0.map { $0.map { $0 + 392 } } }])]
         let SHAPES: [Shape] = [Shape([1, 4, 4]), Shape([2, 4, 4]), Shape([2, 2, 4, 4])]
         for (d, SHAPE) in zip(ds, SHAPES) {
             let pool = Pool2DMax(size: size, stride: 1)
@@ -832,13 +832,13 @@ final class SML2NeuralTests: XCTestCase {
             
             // Now test
             let dataTest = pool.input.out!
-            func loss(_ input: Tensor) -> Double {
-                var out: Tensor
+            func loss(_ input: DTensor) -> Double {
+                var out: DTensor
                 if input.shape.count == 4 {
                     // Make empty out same size as input after pool, mat_shape is the shape of a matrix in our tensor
                     let mat_shape = Array(input.shape[2...3]).pool2D_max_shape(size: size)
                     // Now we can make the out shape using the 2D Tensor (matrix) with a depth of our input depth since pooling always maintains depth and count of our input count
-                    out = Tensor(shape: [input.shape[0], input.shape[1], mat_shape[0], mat_shape[1]], repeating: 0.0)
+                    out = DTensor(shape: [input.shape[0], input.shape[1], mat_shape[0], mat_shape[1]], repeating: 0.0)
                     // Now for each nth image pool
                     for n in 0..<input.shape[0] {
                         // Now pool each depth in the nth image input
@@ -852,7 +852,7 @@ final class SML2NeuralTests: XCTestCase {
                     // Make empty out same size as input after pool, mat_shape is the shape of a matrix in our tensor
                     let mat_shape = Array(input.shape[1...2]).pool2D_max_shape(size: size)
                     // Now we can make the out shape using the 2D Tensor (matrix) with a depth of our input depth since pooling always maintains depth
-                    out = Tensor(shape: [input.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
+                    out = DTensor(shape: [input.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
                     // positions will only have one 2D array
                     // Now pool each depth in input
                     for d in 0..<input.shape[0] {
@@ -872,7 +872,7 @@ final class SML2NeuralTests: XCTestCase {
             }
             let outTest = loss(dataTest)
             // Test input
-            func get_grad_data_numericals(_ pos_data: Tensor, _ neg_data: Tensor, idx: Int) {
+            func get_grad_data_numericals(_ pos_data: DTensor, _ neg_data: DTensor, idx: Int) {
                 let grad_data_numerical = (loss(pos_data) - loss(neg_data)) / (2.0 * eps)
                 
                 let diff_data = grads[pool.input]!.grid[idx] - grad_data_numerical
@@ -884,8 +884,8 @@ final class SML2NeuralTests: XCTestCase {
                 pos_grid[i] = pos_grid[i] + eps
                 var neg_grid = dataTest.grid
                 neg_grid[i] = neg_grid[i] - eps
-                let pos_data = Tensor(shape: dataTest.shape, grid: pos_grid)
-                let neg_data = Tensor(shape: dataTest.shape, grid: neg_grid)
+                let pos_data = DTensor(shape: dataTest.shape, grid: pos_grid)
+                let neg_data = DTensor(shape: dataTest.shape, grid: neg_grid)
                 get_grad_data_numericals(pos_data, neg_data, idx: i)
             }
             XCTAssert(pool.out!.shape == SHAPE)
@@ -899,7 +899,7 @@ final class SML2NeuralTests: XCTestCase {
         let dt2 = dt1.map { $0.map { $0.map { $0 + 58 } } }
         
         let threeD = {
-            let dt = Tensor(dt1)
+            let dt = DTensor(dt1)
             let flatten = Flatten(Variable(dt))
             flatten.forward()
             let out = flatten.out!
@@ -911,7 +911,7 @@ final class SML2NeuralTests: XCTestCase {
         }
         
         let fourD = {
-            let dt = Tensor([dt1, dt2])
+            let dt = DTensor([dt1, dt2])
             let flatten = Flatten(Variable(dt))
             flatten.forward()
             let out = flatten.out!
@@ -926,7 +926,7 @@ final class SML2NeuralTests: XCTestCase {
         fourD()
     }
     
-    func mnist() -> (images: Tensor, labels: Tensor) {
+    func mnist() -> (images: DTensor, labels: DTensor) {
         let train_file: (images: String, labels: String) = ("train-images-idx3-ubyte", "train-labels-idx1-ubyte")
         
         let train_url: (images: URL, labels: URL) = (Bundle.module.url(forResource: train_file.images, withExtension: nil)!, Bundle.module.url(forResource: train_file.labels, withExtension: nil)!)
@@ -937,17 +937,17 @@ final class SML2NeuralTests: XCTestCase {
         
         let use = 200
         
-        let train_images = Tensor(shape: [use, 1, 28, 28], grid: Array(train_bytes.images[16..<train_bytes.images.count - (28 * 28 * (60000 - use))]).map { Double($0) })
+        let train_images = DTensor(shape: [use, 1, 28, 28], grid: Array(train_bytes.images[16..<train_bytes.images.count - (28 * 28 * (60000 - use))]).map { Double($0) })
         let labs: [[Double]] = Array(train_bytes.labels[8..<train_bytes.labels.count - (60000 - use)]).map {
             var arr = Array(repeating: 0.0, count: 10)
             arr[Int($0)] = 1.0
             return arr
         }
-        let train_labels = Tensor(shape: [use, 10], grid: labs.flatMap { $0 })
+        let train_labels = DTensor(shape: [use, 10], grid: labs.flatMap { $0 })
         return (train_images / 255.0, train_labels)
     }
     
-    func mnistTest() -> (images: Tensor, labels: Tensor) {
+    func mnistTest() -> (images: DTensor, labels: DTensor) {
         let test_file: (images: String, labels: String) = ("t10k-images-idx3-ubyte", "t10k-labels-idx1-ubyte")
         
         let test_url: (images: URL, labels: URL) = (Bundle.module.url(forResource: test_file.images, withExtension: nil)!, Bundle.module.url(forResource: test_file.labels, withExtension: nil)!)
@@ -958,13 +958,13 @@ final class SML2NeuralTests: XCTestCase {
         
         let use = 10000
         
-        let test_images = Tensor(shape: [use, 1, 28, 28], grid: Array(test_bytes.images[16..<test_bytes.images.count - (28 * 28 * (10000 - use))]).map { Double($0) })
+        let test_images = DTensor(shape: [use, 1, 28, 28], grid: Array(test_bytes.images[16..<test_bytes.images.count - (28 * 28 * (10000 - use))]).map { Double($0) })
         let labs: [[Double]] = Array(test_bytes.labels[8..<test_bytes.labels.count - (10000 - use)]).map {
             var arr = Array(repeating: 0.0, count: 10)
             arr[Int($0)] = 1.0
             return arr
         }
-        let test_labels = Tensor(shape: [use, 10], grid: labs.flatMap { $0 })
+        let test_labels = DTensor(shape: [use, 10], grid: labs.flatMap { $0 })
         return (test_images / 255.0, test_labels)
     }
     
@@ -1008,7 +1008,7 @@ final class SML2NeuralTests: XCTestCase {
         // Set up our number of batches
         var batches = Int(ceil(Double(X.shape[0]) / Double(b)))
         // Set up all of our mini batchs in advance
-        var mini_batches = [(Tensor, Tensor)](repeating: (Tensor(shape: [], grid: []), Tensor(shape: [], grid: [])), count: batches)
+        var mini_batches = [(DTensor, DTensor)](repeating: (DTensor(shape: [], grid: []), DTensor(shape: [], grid: [])), count: batches)
         print("partioning batches...")
         // Partition X and Y
         for s in 0..<batches {
@@ -1042,7 +1042,7 @@ final class SML2NeuralTests: XCTestCase {
                 let batch_start = CFAbsoluteTimeGetCurrent()
                 // Reset our placeholders for our input data and avg coefficient
                 // X not transposed since images will be transposed when we flatten, Y transposed since predicted will be transposed when doing math with expected
-                session.pass([sequence.input: X_mini, expected: YT_mini, avg: Tensor(1.0 / (m_mini)), avg_lm: Tensor(1.0 / (m_mini))])
+                session.pass([sequence.input: X_mini, expected: YT_mini, avg: DTensor(1.0 / (m_mini)), avg_lm: DTensor(1.0 / (m_mini))])
                 // Forward and backward
                 let (out, grads) = session.run(J)
                 // Run gradient descent with Adam optimizer
@@ -1086,7 +1086,7 @@ final class SML2NeuralTests: XCTestCase {
         // Set up our number of batches
         batches = Int(ceil(Double(X.shape[0]) / Double(b)))
         // Set up all of our mini batchs in advance
-        mini_batches = [(Tensor, Tensor)](repeating: (Tensor(shape: [], grid: []), Tensor(shape: [], grid: [])), count: batches)
+        mini_batches = [(DTensor, DTensor)](repeating: (DTensor(shape: [], grid: []), DTensor(shape: [], grid: [])), count: batches)
         print("partioning test batches...")
         // Partition X and Y
         for s in 0..<batches {
@@ -1109,7 +1109,7 @@ final class SML2NeuralTests: XCTestCase {
             let m_mini = Double(X_mini.shape[0])
             // Reset our placeholders for our input data and avg coefficient
             // X not transposed since images will be transposed when we flatten, Y transposed since predicted will be transposed when doing math with expected
-            session.pass([sequence.input: X_mini, expected: YT_mini, avg: Tensor(1.0 / (m_mini)), avg_lm: Tensor(1.0 / (m_mini))])
+            session.pass([sequence.input: X_mini, expected: YT_mini, avg: DTensor(1.0 / (m_mini)), avg_lm: DTensor(1.0 / (m_mini))])
             // Forward and backward
             let (out, _) = session.run(J, till: J)
             // Add to loss

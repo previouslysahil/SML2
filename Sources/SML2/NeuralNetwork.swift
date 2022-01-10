@@ -101,7 +101,7 @@ public struct Sequence {
     public func decode_params(_ data: Data) {
         if let params = try? JSONDecoder().decode([SequenceParam].self, from: data) {
             for param in params {
-                let tensor = Tensor(shape: param.shape, grid: param.grid)
+                let tensor = DTensor(shape: param.shape, grid: param.grid)
                 if param.name.contains("weight") {
                     let layer = layers[param.layer] as! Linear
                     if param.name.contains("bias") {
@@ -155,7 +155,7 @@ public class Layer: Variable {
 // MARK: Linear
 public final class Linear: Layer {
     
-    private var combination: Tensor?
+    private var combination: DTensor?
     
     public var weight: Variable {
         return inputs[1]
@@ -166,10 +166,10 @@ public final class Linear: Layer {
     
     // Placeholder in case input currently uknown (first input, or we haven't fed forward)
     public init(_ input: Variable = Placeholder(), to: Int, out: Int, tag: String = "") {
-        let weight = Variable(Tensor.random_xavier(shape: [out, to], ni: to, no: out))
-        let bias = Variable(Tensor(shape: [out, 1], repeating: 0.01))
+        let weight = Variable(DTensor.random_xavier(shape: [out, to], ni: to, no: out))
+        let bias = Variable(DTensor(shape: [out, 1], repeating: 0.01))
         super.init(inputs: [input, weight, bias], tag: tag)
-        grads = Array(repeating: Tensor(shape: [], grid: []), count: 3)
+        grads = Array(repeating: DTensor(shape: [], grid: []), count: 3)
     }
     
     public override func forward() {
@@ -182,7 +182,7 @@ public final class Linear: Layer {
         out = combination! + bias
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Clarify inputs
         let data = inputs[0].out!
         let weight = inputs[1].out!
@@ -226,7 +226,7 @@ public final class Sigmoid: Layer {
     // Placeholder in case input currently unknown (we haven't fed forward)
     public init(_ input: Variable = Placeholder(), tag: String = "") {
         super.init(inputs: [input], tag: tag)
-        grads = Array(repeating: Tensor(shape: [], grid: []), count: 1)
+        grads = Array(repeating: DTensor(shape: [], grid: []), count: 1)
     }
     
     public override func forward() {
@@ -236,7 +236,7 @@ public final class Sigmoid: Layer {
         out = input.sigmoid()
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Clarify inputs
         let out = out!
         // Grad on input
@@ -252,7 +252,7 @@ public final class ReLU: Layer {
     // Placeholder in case input currently unknown (we haven't fed forward)
     public init(_ input: Variable = Placeholder(), tag: String = "") {
         super.init(inputs: [input], tag: tag)
-        grads = Array(repeating: Tensor(shape: [], grid: []), count: 1)
+        grads = Array(repeating: DTensor(shape: [], grid: []), count: 1)
     }
     
     public override func forward() {
@@ -262,7 +262,7 @@ public final class ReLU: Layer {
         out = input.relu()
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Clarify inputs
         let input = inputs[0].out!
         // Grad on input
@@ -278,7 +278,7 @@ public final class LReLU: Layer {
     // Placeholder in case input currently unknown (we haven't fed forward)
     public init(_ input: Variable = Placeholder(), tag: String = "") {
         super.init(inputs: [input], tag: tag)
-        grads = Array(repeating: Tensor(shape: [], grid: []), count: 1)
+        grads = Array(repeating: DTensor(shape: [], grid: []), count: 1)
     }
     
     public override func forward() {
@@ -288,7 +288,7 @@ public final class LReLU: Layer {
         out = input.lrelu()
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Clarify inputs
         let input = inputs[0].out!
         // Grad on input
@@ -301,10 +301,10 @@ public final class LReLU: Layer {
 // MARK: BatchNorm
 public final class BatchNorm: Layer {
     
-    private var data_norm: Tensor?
-    private var running_mean: Tensor?
-    private var running_std: Tensor?
-    private var sample_std: Tensor?
+    private var data_norm: DTensor?
+    private var running_mean: DTensor?
+    private var running_std: DTensor?
+    private var sample_std: DTensor?
     private var momentum: Double
     
     public var training: Bool
@@ -318,12 +318,12 @@ public final class BatchNorm: Layer {
     
     // Placeholder in case input currently unknown (we haven't fed forward)
     public init(_ input: Variable = Placeholder(), to: Int, momentum: Double = 0.9, training: Bool = true, tag: String = "") {
-        let gamma = Variable(Tensor(shape: [to, 1], repeating: 4))
-        let beta = Variable(Tensor(shape: [to, 1], repeating: 5))
+        let gamma = Variable(DTensor(shape: [to, 1], repeating: 4))
+        let beta = Variable(DTensor(shape: [to, 1], repeating: 5))
         self.training = training
         self.momentum = momentum
         super.init(inputs: [input, gamma, beta], tag: tag)
-        grads = Array(repeating: Tensor(shape: [], grid: []), count: 3)
+        grads = Array(repeating: DTensor(shape: [], grid: []), count: 3)
     }
     
     public override func forward() {
@@ -353,7 +353,7 @@ public final class BatchNorm: Layer {
         }
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Clarify inputs
         let data_norm = data_norm!
         let gamma = inputs[1].out!
@@ -390,11 +390,11 @@ public final class Conv2D: Layer {
     // Placeholder in case input currently unknown (we haven't fed forward)
     public init(_ input: Variable = Placeholder(), to: Int, out: Int, size: Int, pad: Bool = false, tag: String = "") {
         // Check if this is really xavier
-        let kernel = Variable(Tensor.random_xavier(shape: [out, to, size, size], ni: size * size * to, no: size * size * out))
-        let bias = Variable(Tensor(shape: [out], repeating: 0.01))
+        let kernel = Variable(DTensor.random_xavier(shape: [out, to, size, size], ni: size * size * to, no: size * size * out))
+        let bias = Variable(DTensor(shape: [out], repeating: 0.01))
         self.pad = pad
         super.init(inputs: [input, kernel, bias], tag: tag)
-        grads = Array(repeating: Tensor(shape: [], grid: []), count: 3)
+        grads = Array(repeating: DTensor(shape: [], grid: []), count: 3)
     }
     
     public override func forward() {
@@ -408,7 +408,7 @@ public final class Conv2D: Layer {
             // pad to make shape a same convolution if we have padding
             let mat_shape = pad ? Array(data.shape[1...2]).pad_shape((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid) : Array(data.shape[1...2]).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid)
             // Now we can make the out shape using the 2D Tensor (matrix) with a depth of the number of kernels since out must have the same depth as the number of kernels
-            out = Tensor(shape: [kernel.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
+            out = DTensor(shape: [kernel.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
             // Now for each kernel we convolve with our data to produce our dth depth for out
             for d in 0..<kernel.shape[0] {
                 // Used repeatedly in following for loop so cache
@@ -427,7 +427,7 @@ public final class Conv2D: Layer {
             // pad to make shape a same convolution if we have padding
             let mat_shape = pad ? Array(data.shape[2...3]).pad_shape((kernel.shape[2] - 1) / 2, (kernel.shape[3] - 1) / 2).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid) : Array(data.shape[2...3]).conv2D_shape(with: Array(kernel.shape[2...3]), type: .valid)
             // Now we can make the out shape using the 2D Tensor (matrix) with a depth of the number of kernels since out must have the same depth as the number of kernels and a count of the number of input images since we are outting the same number of images
-            out = Tensor(shape: [data.shape[0], kernel.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
+            out = DTensor(shape: [data.shape[0], kernel.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
             // Now for each image we do a convolution
             for n in 0..<data.shape[0] {
                 // Used repeatedly in following for loop so cache
@@ -450,21 +450,21 @@ public final class Conv2D: Layer {
         }
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Clarify inputs
         let data = inputs[0].out!
         let kernel = inputs[1].out!
         let bias = inputs[2].out!
         // Declare grads
-        var gradData: Tensor
-        var gradKernel: Tensor
-        var gradBias: Tensor
+        var gradData: DTensor
+        var gradKernel: DTensor
+        var gradBias: DTensor
         // Get grad for data, kernel, and bias (valid) SHOULD ROTATE KERNEL 180
         // Convolve! Backwards...? D;
         if kernel.shape.count == 4 && data.shape.count == 3 && kernel.shape[1] == data.shape[0] {
             // *** GRADDATA ***
             // gradData should be the same shape as our data
-            gradData = Tensor(shape: data.shape, repeating: 0.0)
+            gradData = DTensor(shape: data.shape, repeating: 0.0)
             // Each depth of gradData is influenced by every kernel that was convoluted over data so we must convolve each depth of dOut with the corresponding depth of each kernel
             for d in 0..<kernel.shape[0] {
                 // Used repeatedly in following for loop so cache
@@ -481,7 +481,7 @@ public final class Conv2D: Layer {
             
             // *** GRADKERNEL ***
             // gradKernel should be the same shape as our kernels tensor
-            gradKernel = Tensor(shape: kernel.shape, repeating: 0)
+            gradKernel = DTensor(shape: kernel.shape, repeating: 0)
             // Now we calculate the influence of each kernel
             for d in 0..<kernel.shape[0] {
                 // Used repeatedly in following for loop so cache
@@ -504,7 +504,7 @@ public final class Conv2D: Layer {
         } else if kernel.shape.count == 4 && data.shape.count == 4 && kernel.shape[1] == data.shape[1] {
             // *** GRADDATA ***
             // gradData should be the same shape as our data
-            gradData = Tensor(shape: data.shape, repeating: 0.0)
+            gradData = DTensor(shape: data.shape, repeating: 0.0)
             // Average each images dOut
             for n in 0..<data.shape[0] {
                 // Used repeatedly in following for loop so cache
@@ -526,7 +526,7 @@ public final class Conv2D: Layer {
             
             // *** GRADKERNEL ***
             // gradKernel should be the same shape as our kernels tensor
-            gradKernel = Tensor(shape: kernel.shape, repeating: 0)
+            gradKernel = DTensor(shape: kernel.shape, repeating: 0)
             // Average each images dOut
             for n in 0..<data.shape[0] {
                 // Used repeatedly in following for loop so cache
@@ -548,7 +548,7 @@ public final class Conv2D: Layer {
             // For more clarity look at the previous github commit
             
             // *** GRADBIAS ***
-            gradBias = Tensor(shape: bias.shape, repeating: 0.0)
+            gradBias = DTensor(shape: bias.shape, repeating: 0.0)
             // Average each images dOut
             for n in 0..<data.shape[0] {
                 // Used repeatedly in following for loop so cache
@@ -580,7 +580,7 @@ public final class Pool2DMax: Layer {
         self.size = size
         self.stride = stride
         super.init(inputs: [input], tag: tag)
-        grads = Array(repeating: Tensor(shape: [], grid: []), count: 1)
+        grads = Array(repeating: DTensor(shape: [], grid: []), count: 1)
     }
     
     public override func forward() {
@@ -591,7 +591,7 @@ public final class Pool2DMax: Layer {
             // Make empty out same size as input after pool, mat_shape is the shape of a matrix in our tensor
             let mat_shape = Array(input.shape[2...3]).pool2D_max_shape(size: size, strd: stride)
             // Now we can make the out shape using the 2D Tensor (matrix) with a depth of our input depth since pooling always maintains depth and count of our input count
-            out = Tensor(shape: [input.shape[0], input.shape[1], mat_shape[0], mat_shape[1]], repeating: 0.0)
+            out = DTensor(shape: [input.shape[0], input.shape[1], mat_shape[0], mat_shape[1]], repeating: 0.0)
             // positions will have 2D arrays as long as input count
             n_positions = Array(repeating: Array(repeating: [], count: input.shape[1]), count: input.shape[0])
             // Now for each nth image pool
@@ -611,7 +611,7 @@ public final class Pool2DMax: Layer {
             // Make empty out same size as input after pool, mat_shape is the shape of a matrix in our tensor
             let mat_shape = Array(input.shape[1...2]).pool2D_max_shape(size: size, strd: stride)
             // Now we can make the out shape using the 2D Tensor (matrix) with a depth of our input depth since pooling always maintains depth
-            out = Tensor(shape: [input.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
+            out = DTensor(shape: [input.shape[0], mat_shape[0], mat_shape[1]], repeating: 0.0)
             // positions will only have one 2D array
             n_positions = Array(repeating: Array(repeating: [], count: input.shape[0]), count: 1)
             // Now pool each depth in input
@@ -627,13 +627,13 @@ public final class Pool2DMax: Layer {
         }
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Clarify inputs
         let input = inputs[0].out!
         // Backprop
         if input.shape.count == 4 {
             // Make empty tensor of input shape
-            var gradInput = Tensor(shape: input.shape, repeating: 0.0)
+            var gradInput = DTensor(shape: input.shape, repeating: 0.0)
             // For each input image use its cached positions
             for n in 0..<n_positions!.count {
                 // Used repeatedly in following for loop so cache
@@ -655,7 +655,7 @@ public final class Pool2DMax: Layer {
             grads[0] = gradInput
         } else if input.shape.count == 3 {
             // Make empty tensor of input shape
-            var gradInput = Tensor(shape: input.shape, repeating: 0.0)
+            var gradInput = DTensor(shape: input.shape, repeating: 0.0)
             // The cached position contains where our gradients in gradInput should be
             for (d, positions) in n_positions![0].enumerated() {
                 // Used repeatedly in following for loop so cache
@@ -683,7 +683,7 @@ public final class Flatten: Layer {
     // Placeholder in case input currently unknown (we haven't fed forward)
     public init(_ input: Variable = Placeholder(), tag: String = "") {
         super.init(inputs: [input], tag: tag)
-        grads = Array(repeating: Tensor(shape: [], grid: []), count: 1)
+        grads = Array(repeating: DTensor(shape: [], grid: []), count: 1)
     }
     
     public override func forward() {
@@ -694,13 +694,13 @@ public final class Flatten: Layer {
         if input.shape.count == 4 {
             // Rows is number of images, columns is all other dimensions multiplied
             // Transpose to fit linear layer
-            out = Tensor(shape: [input.shape[0], input.shape[1] * input.shape[2] * input.shape[3]], grid: input.grid).transpose()
+            out = DTensor(shape: [input.shape[0], input.shape[1] * input.shape[2] * input.shape[3]], grid: input.grid).transpose()
             // Cache input shape
             input_shape = input.shape
         } else if input.shape.count == 3 {
             // Rows is 1, columns is all dimensions multiplied
             // Transpose to fit linear layer
-            out = Tensor(shape: [1, input.shape[0] * input.shape[1] * input.shape[2]], grid: input.grid).transpose()
+            out = DTensor(shape: [1, input.shape[0] * input.shape[1] * input.shape[2]], grid: input.grid).transpose()
             // Cache input shape
             input_shape = input.shape
         } else {
@@ -708,9 +708,9 @@ public final class Flatten: Layer {
         }
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Grad, transpose dOut since we transpose in forward
-        let gradInput = Tensor(shape: input_shape!, grid: dOut!.transpose().grid)
+        let gradInput = DTensor(shape: input_shape!, grid: dOut!.transpose().grid)
         // Set grad
         grads[0] = gradInput
     }
@@ -752,10 +752,10 @@ public final class Process {
         return (shuffledData, shuffledLabels)
     }
     
-    private var mean = Tensor(shape: [], grid: [])
-    private var std = Tensor(shape: [], grid: [])
+    private var mean = DTensor(shape: [], grid: [])
+    private var std = DTensor(shape: [], grid: [])
     
-    public func zscore(_ input: Tensor, type: ProcessType) -> Tensor {
+    public func zscore(_ input: DTensor, type: ProcessType) -> DTensor {
         switch type {
         case .data:
             let (norm, mean, std) = input.zscore()
@@ -767,7 +767,7 @@ public final class Process {
         }
     }
     
-    public func zscore_image(_ input: Tensor, type: ProcessType) -> Tensor {
+    public func zscore_image(_ input: DTensor, type: ProcessType) -> DTensor {
         switch type {
         case .data:
             let (norm, mean, std) = input.zscore_image()

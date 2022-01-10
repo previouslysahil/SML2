@@ -24,16 +24,16 @@ public final class CGraph {
     // Parallel toggle
     private var parallel: Bool = false
     // Seed
-    private var seed: Tensor?
+    private var seed: DTensor?
     
     // MARK: Init
-    public init(_ root: Variable, seed: Tensor, parallel: Bool = false) {
+    public init(_ root: Variable, seed: DTensor, parallel: Bool = false) {
         build(root, seed: seed, parallel: parallel)
     }
     
     public init() {}
     
-    public func build(_ root: Variable, seed: Tensor, parallel: Bool = false) {
+    public func build(_ root: Variable, seed: DTensor, parallel: Bool = false) {
         self.parallel = parallel
         self.seed = seed
         // Sort graph based on paralleization
@@ -44,7 +44,7 @@ public final class CGraph {
         }
     }
     
-    public func pass(_ data: [Variable: Tensor]) {
+    public func pass(_ data: [Variable: DTensor]) {
         for (node, out) in data {
             // Set the corresponding placeholder for our key's value (now treated like a variable)
             if node.type == .placeholder {
@@ -103,7 +103,7 @@ public final class CGraph {
     
     // MARK: Forward Exposed
     @discardableResult
-    public func fwd(till: Variable? = nil) -> Tensor {
+    public func fwd(till: Variable? = nil) -> DTensor {
         // Run fwd based on paralleization
         if parallel {
             // till not implemented yet
@@ -114,7 +114,7 @@ public final class CGraph {
     }
     
     // MARK: Forward
-    private func forward(till: Variable? = nil) -> Tensor {
+    private func forward(till: Variable? = nil) -> DTensor {
         // Set tracking if we already forwarded one of the nodes
         var forwarded = Set<Variable>()
         // Go through all nodes starting at lowest dependecy and forward
@@ -130,7 +130,7 @@ public final class CGraph {
     }
     
     // MARK: Forward PARALLEL
-    private func forward_parallel(till: Variable? = nil) -> Tensor {
+    private func forward_parallel(till: Variable? = nil) -> DTensor {
         // Set tracking if we already forwarded one of the nodes
         var forwarded = Set<Variable>()
         // Go through all nodes starting at lowest dependecy and forward
@@ -162,7 +162,7 @@ public final class CGraph {
     
     // MARK: Backward Exposed
     @discardableResult
-    public func bwd() -> [Variable: Tensor] {
+    public func bwd() -> [Variable: DTensor] {
         // Run bwd based on paralleization
         if parallel {
             return backward_parallel(seed: seed!)
@@ -172,9 +172,9 @@ public final class CGraph {
     }
     
     // MARK: Backward
-    private func backward(seed: Tensor) -> [Variable: Tensor] {
+    private func backward(seed: DTensor) -> [Variable: DTensor] {
         // Make set to contain visited
-        var grads = [Variable: Tensor]()
+        var grads = [Variable: DTensor]()
         // BFS from root and propagate gradient backwards
         backward_bfs(seed: seed, grads: &grads)
         return grads
@@ -182,9 +182,9 @@ public final class CGraph {
     
     // MARK: Backward BFS
     // DOES NOT CHECK FOR CYCLES
-    private func backward_bfs(seed: Tensor, grads: inout [Variable: Tensor]) {
+    private func backward_bfs(seed: DTensor, grads: inout [Variable: DTensor]) {
         // Make empty queue
-        var queue = [(Variable, Tensor)]()
+        var queue = [(Variable, DTensor)]()
         // Add our first node (root AKA most dependent) and the first gradient (usually 1) to queue
         queue.append((nodes.first!, seed))
         // BFS until queue is empty
@@ -210,9 +210,9 @@ public final class CGraph {
     }
     
     // MARK: Backward PARALLEL
-    private func backward_parallel(seed: Tensor) -> [Variable: Tensor] {
+    private func backward_parallel(seed: DTensor) -> [Variable: DTensor] {
         // Make set to contain visited
-        var grads = [Variable: Tensor]()
+        var grads = [Variable: DTensor]()
         // BFS from root and propagate gradient backwards
         backward_bfs_parallel(seed: seed, grads: &grads)
         return grads
@@ -220,7 +220,7 @@ public final class CGraph {
     
     // MARK: Backward BFS PARALLEL
     // DOES NOT CHECK FOR CYCLES
-    private func backward_bfs_parallel(seed: Tensor, grads: inout [Variable: Tensor]) {
+    private func backward_bfs_parallel(seed: DTensor, grads: inout [Variable: DTensor]) {
         // Iterate from our lowest depth (lowest dependency)
         // This sorted keys could be optimized since it is used in forward_parallel and backward_bfs_parallel
         for depth in nodes_parallel.keys.sorted() {
@@ -234,7 +234,7 @@ public final class CGraph {
                 grads[root] = seed
             } else {
                 // Make our queues
-                var queues = [[(node: Variable, dOut: Tensor)]]()
+                var queues = [[(node: Variable, dOut: DTensor)]]()
                 // For each node at each depth calculate it's chain ruled gradient
                 for (node, parent, idx) in nodes_parallel[depth]! {
                     // Find this nodes dOut through it parents gradients
@@ -306,14 +306,14 @@ public class Variable: Hashable, Comparable {
     public final func hash(into hasher: inout Hasher) { return hasher.combine(ObjectIdentifier(self)) }
     
     public final var inputs: [Variable]
-    public final var out: Tensor?
+    public final var out: DTensor?
     // This will contain the chain ruled gradients for the inputs to the unit
-    public final var grads: [Tensor]
+    public final var grads: [DTensor]
     public final var tag: String
     
     public final var type: CGGraphTypes
     
-    public init(_ out: Tensor? = nil, inputs: [Variable] = [], tag: String = "") {
+    public init(_ out: DTensor? = nil, inputs: [Variable] = [], tag: String = "") {
         self.inputs = inputs
         self.out = out
         self.grads = []
@@ -323,7 +323,7 @@ public class Variable: Hashable, Comparable {
     
     public init(_ out: Double, inputs: [Variable] = [], tag: String = "") {
         self.inputs = inputs
-        self.out = Tensor(out)
+        self.out = DTensor(out)
         self.grads = []
         self.tag = tag
         self.type = .variable
@@ -331,7 +331,7 @@ public class Variable: Hashable, Comparable {
     
     public func forward() { }
     // dOut is the gradient for this node wrt to the root of the graph
-    public func backward(dOut: Tensor?) {}
+    public func backward(dOut: DTensor?) {}
 }
 
 // MARK: Placeholder
@@ -346,7 +346,7 @@ public final class Placeholder: Variable {
 // MARK: Constant
 public final class Constant: Variable {
     
-    public init(_ out: Tensor, tag: String = "") {
+    public init(_ out: DTensor, tag: String = "") {
         super.init(out, tag: tag)
         self.type = .constant
     }
@@ -362,7 +362,7 @@ public class BinaryOp: Variable {
     
     public init(_ a: Variable, _ b: Variable, tag: String = "") {
         super.init(inputs: [a, b], tag: tag)
-        grads = Array(repeating: Tensor(shape: [], grid: []), count: 2)
+        grads = Array(repeating: DTensor(shape: [], grid: []), count: 2)
         self.type = .operation
     }
 }
@@ -372,7 +372,7 @@ public class UnaryOp: Variable {
     
     public init(_ a: Variable, tag: String = "") {
         super.init(inputs: [a], tag: tag)
-        grads = Array(repeating: Tensor(shape: [], grid: []), count: 1)
+        grads = Array(repeating: DTensor(shape: [], grid: []), count: 1)
         self.type = .operation
     }
 }
@@ -384,7 +384,7 @@ public final class Add: BinaryOp {
         out = inputs[0].out! + inputs[1].out!
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Clarify a and b
         let a = inputs[0].out!
         let b = inputs[1].out!
@@ -424,7 +424,7 @@ public final class Mul: BinaryOp {
         out = inputs[0].out! * inputs[1].out!
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Clarify a and b
         let a = inputs[0].out!
         let b = inputs[1].out!
@@ -464,7 +464,7 @@ public final class MatMul: BinaryOp {
         out = inputs[0].out! <*> inputs[1].out!
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Clarify a and b
         let a = inputs[0].out!
         let b = inputs[1].out!
@@ -484,7 +484,7 @@ public final class MatTran: UnaryOp {
         out = inputs[0].out!.transpose()
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         grads[0] = dOut!.transpose()
     }
 }
@@ -496,7 +496,7 @@ public final class Inv: UnaryOp {
         out = 1.0 / inputs[0].out!
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Clarify a
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
@@ -512,7 +512,7 @@ public final class Negate: UnaryOp {
         out = -inputs[0].out!
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Gradient for input_nodes[0] AKA a
         let gradA = -1.0
         grads[0] = dOut! * gradA
@@ -526,7 +526,7 @@ public final class Sin: UnaryOp {
         out = inputs[0].out!.sin()
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Clarify a
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
@@ -542,7 +542,7 @@ public final class Exp: UnaryOp {
         out = inputs[0].out!.exp()
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Gradient for input_nodes[0] AKA a
         let gradA = out!
         grads[0] = dOut! * gradA
@@ -556,7 +556,7 @@ public final class Log: UnaryOp {
         out = (inputs[0].out! + 0.00000001).log()
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Clarify a
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
@@ -572,7 +572,7 @@ public final class Square: UnaryOp {
         out = inputs[0].out!.pow(2)
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Clarify a
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
@@ -590,7 +590,7 @@ public final class Pow: UnaryOp {
         out = inputs[0].out!.pow(p!)
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         // Clarify a
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
@@ -603,15 +603,15 @@ public final class Pow: UnaryOp {
 public final class Sum: UnaryOp {
     
     public override func forward() {
-        out = Tensor(inputs[0].out!.sum())
+        out = DTensor(inputs[0].out!.sum())
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         precondition(dOut!.shape.count == 0)
         // Clarify a
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
-        let gradA = Tensor(shape: a.shape, repeating: dOut!.grid.first!)
+        let gradA = DTensor(shape: a.shape, repeating: dOut!.grid.first!)
         grads[0] = gradA
     }
 }
@@ -620,15 +620,15 @@ public final class Sum: UnaryOp {
 public final class SumDiag: UnaryOp {
     
     public override func forward() {
-        out = Tensor(inputs[0].out!.sumDiag())
+        out = DTensor(inputs[0].out!.sumDiag())
     }
     
-    public override func backward(dOut: Tensor?) {
+    public override func backward(dOut: DTensor?) {
         precondition(dOut!.shape.count == 0)
         // Clarify a
         let a = inputs[0].out!
         // Gradient for input_nodes[0] AKA a
-        let gradA = Tensor(shape: a.shape, repeating: dOut!.grid.first!).diag()
+        let gradA = DTensor(shape: a.shape, repeating: dOut!.grid.first!).diag()
         grads[0] = gradA
     }
 }
@@ -694,17 +694,17 @@ public final class Session {
     }
     
     // seed == scalar basically means we are assuming we are ADing a function that outputs a scalar (all cost functions should do this)
-    public func build(_ root: Variable, seed: Tensor = Tensor(1)) {
+    public func build(_ root: Variable, seed: DTensor = DTensor(1)) {
         // Builds the graph (currently just topolgical sort, maybe offset some other work here?)
         graph.build(root, seed: seed, parallel: parallel)
     }
     
-    public func pass(_ data: [Variable: Tensor]) {
+    public func pass(_ data: [Variable: DTensor]) {
         // Populates our placeholders
         graph.pass(data)
     }
     
-    public func run(_ root: Variable, till: Variable? = nil, seed: Tensor = Tensor(1)) -> (out: Tensor, grads: [Variable: Tensor]) {
+    public func run(_ root: Variable, till: Variable? = nil, seed: DTensor = DTensor(1)) -> (out: DTensor, grads: [Variable: DTensor]) {
         if till != nil {
             // Forward to get our answer
             let out = graph.fwd(till: till)
@@ -717,11 +717,11 @@ public final class Session {
         return (out, grads)
     }
     
-    public func descend(grads: [Variable: Tensor], optim: Optimizer, lr: Double) {
+    public func descend(grads: [Variable: DTensor], optim: Optimizer, lr: Double) {
         var types = [String: Int]()
         // Two empty soon to be perfect arrays
         var params = [Variable]()
-        var optim_grads = [Tensor]()
+        var optim_grads = [DTensor]()
         // Store the computed gradients for our parameters
         for (node, grad) in grads.sorted(by: { $0.key < $1.key }) {
             if node.type == .variable {
@@ -753,14 +753,14 @@ public final class Session {
 // MARK: Optimizer
 public protocol Optimizer {
     
-    func gradients(grads_ptr: UnsafeBufferPointer<Tensor>) -> [Tensor]
+    func gradients(grads_ptr: UnsafeBufferPointer<DTensor>) -> [DTensor]
 }
 
 // MARK: ADAM
 public final class Adam: Optimizer {
     
-    private var m = [Tensor]()
-    private var v = [Tensor]()
+    private var m = [DTensor]()
+    private var v = [DTensor]()
     
     private var b1: Double
     private var b2: Double
@@ -777,7 +777,7 @@ public final class Adam: Optimizer {
         t += 1
     }
     
-    public func gradients(grads_ptr: UnsafeBufferPointer<Tensor>) -> [Tensor] {
+    public func gradients(grads_ptr: UnsafeBufferPointer<DTensor>) -> [DTensor] {
         // Get our mean moments for our grads
         m = mean(derivatives: grads_ptr, m: m, b1: b1)
         // Get our variance moments for our grads
@@ -788,22 +788,22 @@ public final class Adam: Optimizer {
         return grads
     }
     
-    private func grads(m: [Tensor], v: [Tensor], t: Int) -> [Tensor] {
+    private func grads(m: [DTensor], v: [DTensor], t: Int) -> [DTensor] {
         return zip(m, v).map { m_l, v_l in
             // Get corrected m and v
-            let mc_l: Tensor = m_l / (1 - pow(0.9, Double(t)))
-            let vc_l: Tensor = v_l / (1 - pow(0.999, Double(t)))
+            let mc_l: DTensor = m_l / (1 - pow(0.9, Double(t)))
+            let vc_l: DTensor = v_l / (1 - pow(0.999, Double(t)))
             // Define our gradient
             return mc_l / (vc_l.sqrt() + 0.00000001)
         }
     }
     
-    private func mean(derivatives: UnsafeBufferPointer<Tensor>, m: [Tensor], b1: Double) -> [Tensor] {
+    private func mean(derivatives: UnsafeBufferPointer<DTensor>, m: [DTensor], b1: Double) -> [DTensor] {
         // First set up empty gradient array to store each layers gradient matrix
-        var firstMoments = [Tensor]()
+        var firstMoments = [DTensor]()
         // On nth iteration get the gradient with momentum for each layer and add it to our gradient matrix
         for l in 0..<derivatives.count {
-            let firstMoment: Tensor
+            let firstMoment: DTensor
             if m.isEmpty {
                 // Make our gradient for this layer which is just our derivative * lr this time
                 firstMoment = (1 - b1) * derivatives[l]
@@ -818,12 +818,12 @@ public final class Adam: Optimizer {
         return firstMoments
     }
     
-    private func variance(derivatives: UnsafeBufferPointer<Tensor>, v: [Tensor], b2: Double) -> [Tensor] {
+    private func variance(derivatives: UnsafeBufferPointer<DTensor>, v: [DTensor], b2: Double) -> [DTensor] {
         // First set up empty gradient array to store each layers gradient matrix
-        var secondMoments = [Tensor]()
+        var secondMoments = [DTensor]()
         // On nth iteration get the gradient with momentum for each layer and add it to our gradient matrix
         for l in 0..<derivatives.count {
-            let secondMoment: Tensor
+            let secondMoment: DTensor
             if v.isEmpty {
                 // Make our gradient for this layer which is just our derivative * lr this time
                 secondMoment = (1 - b2) * derivatives[l].pow(2)
