@@ -16,7 +16,7 @@ func prepare_metal() -> (device: MTLDevice, commandQueue: MTLCommandQueue) {
     return (device, commandQueue)
 }
 @available(macOS 10.13, *)
-func matrix_mul_metal(a: DTensor, b: DTensor, device: MTLDevice, commandBuffer: MTLCommandBuffer) -> DTensor {
+func matrix_mul_metal(a: FTensor, b: FTensor, device: MTLDevice, commandBuffer: MTLCommandBuffer) -> FTensor {
     var a_shape = a.shape
     var b_shape = b.shape
     if a.shape.count == 1 {
@@ -30,27 +30,19 @@ func matrix_mul_metal(a: DTensor, b: DTensor, device: MTLDevice, commandBuffer: 
     
     let mmKernel = MPSMatrixMultiplication(device: device, transposeLeft: false, transposeRight: false, resultRows: a_shape[0], resultColumns: b_shape[1], interiorColumns: a_shape[1], alpha: 1.0, beta: 0.0)
     
-    var res = DTensor(shape: [a_shape[0], b_shape[1]], repeating: 0.0)
+    var res = FTensor(shape: [a_shape[0], b_shape[1]], repeating: 0.0)
     let res_N = res.grid.count
     let a_N = a.grid.count
     let b_N = b.grid.count
     a.grid.withUnsafeBufferPointer { aPtr in
         b.grid.withUnsafeBufferPointer { bPtr in
-            var gridA = [Float32](repeating: 0.0, count: a_N)
-            gridA.withUnsafeMutableBufferPointer { afPtr in
-                vDSP_vdpsp(aPtr.baseAddress!, vDSP_Stride(1), afPtr.baseAddress!, vDSP_Stride(1), vDSP_Length(a_N))
-            }
             let totalBytesA = MemoryLayout<Float32>.stride * a_N
-            let bufferA = device.makeBuffer(bytes: gridA, length: totalBytesA, options: .storageModeShared)
+            let bufferA = device.makeBuffer(bytes: a.grid, length: totalBytesA, options: .storageModeShared)
             let descriptorA = MPSMatrixDescriptor(rows: a_shape[0], columns: a_shape[1], rowBytes: totalBytesA / a_shape[0], dataType: .float32)
             let A = MPSMatrix(buffer: bufferA!, descriptor: descriptorA)
             
-            var gridB = [Float32](repeating: 0.0, count: b_N)
-            gridB.withUnsafeMutableBufferPointer { bfPtr in
-                vDSP_vdpsp(bPtr.baseAddress!, vDSP_Stride(1), bfPtr.baseAddress!, vDSP_Stride(1), vDSP_Length(b_N))
-            }
             let totalBytesB = MemoryLayout<Float32>.stride * b_N
-            let bufferB = device.makeBuffer(bytes: gridB, length: totalBytesB, options: .storageModeShared)
+            let bufferB = device.makeBuffer(bytes: b.grid, length: totalBytesB, options: .storageModeShared)
             let descriptorB = MPSMatrixDescriptor(rows: b_shape[0], columns: b_shape[1], rowBytes: totalBytesB / b_shape[0], dataType: .float32)
             let B = MPSMatrix(buffer: bufferB!, descriptor: descriptorB)
             
@@ -67,7 +59,7 @@ func matrix_mul_metal(a: DTensor, b: DTensor, device: MTLDevice, commandBuffer: 
             let typePointer = rawPointer.bindMemory(to: Float32.self, capacity: A.rows * B.columns)
             let bufferPointer = UnsafeBufferPointer(start: typePointer, count: A.rows * B.columns)
             res.grid.withUnsafeMutableBufferPointer { resPtr in
-                vDSP_vspdp(bufferPointer.baseAddress!, vDSP_Stride(1), resPtr.baseAddress!, vDSP_Stride(1), vDSP_Length(res_N))
+                cblas_scopy(Int32(res_N), bufferPointer.baseAddress!, 1, resPtr.baseAddress!, 1)
             }
         }
     }

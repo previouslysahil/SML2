@@ -926,7 +926,7 @@ final class SML2NeuralTests: XCTestCase {
         fourD()
     }
     
-    func mnist() -> (images: DTensor, labels: DTensor) {
+    func mnist() -> (images: FTensor, labels: FTensor) {
         let train_file: (images: String, labels: String) = ("train-images-idx3-ubyte", "train-labels-idx1-ubyte")
         
         let train_url: (images: URL, labels: URL) = (Bundle.module.url(forResource: train_file.images, withExtension: nil)!, Bundle.module.url(forResource: train_file.labels, withExtension: nil)!)
@@ -937,17 +937,17 @@ final class SML2NeuralTests: XCTestCase {
         
         let use = 200
         
-        let train_images = DTensor(shape: [use, 1, 28, 28], grid: Array(train_bytes.images[16..<train_bytes.images.count - (28 * 28 * (60000 - use))]).map { Double($0) })
-        let labs: [[Double]] = Array(train_bytes.labels[8..<train_bytes.labels.count - (60000 - use)]).map {
-            var arr = Array(repeating: 0.0, count: 10)
+        let train_images = FTensor(shape: [use, 1, 28, 28], grid: Array(train_bytes.images[16..<train_bytes.images.count - (28 * 28 * (60000 - use))]).map { Float($0) })
+        let labs: [[Float]] = Array(train_bytes.labels[8..<train_bytes.labels.count - (60000 - use)]).map {
+            var arr = Array(repeating: Float(0.0), count: 10)
             arr[Int($0)] = 1.0
             return arr
         }
-        let train_labels = DTensor(shape: [use, 10], grid: labs.flatMap { $0 })
+        let train_labels = FTensor(shape: [use, 10], grid: labs.flatMap { $0 })
         return (train_images / 255.0, train_labels)
     }
     
-    func mnistTest() -> (images: DTensor, labels: DTensor) {
+    func mnistTest() -> (images: FTensor, labels: FTensor) {
         let test_file: (images: String, labels: String) = ("t10k-images-idx3-ubyte", "t10k-labels-idx1-ubyte")
         
         let test_url: (images: URL, labels: URL) = (Bundle.module.url(forResource: test_file.images, withExtension: nil)!, Bundle.module.url(forResource: test_file.labels, withExtension: nil)!)
@@ -958,19 +958,19 @@ final class SML2NeuralTests: XCTestCase {
         
         let use = 10000
         
-        let test_images = DTensor(shape: [use, 1, 28, 28], grid: Array(test_bytes.images[16..<test_bytes.images.count - (28 * 28 * (10000 - use))]).map { Double($0) })
-        let labs: [[Double]] = Array(test_bytes.labels[8..<test_bytes.labels.count - (10000 - use)]).map {
-            var arr = Array(repeating: 0.0, count: 10)
+        let test_images = FTensor(shape: [use, 1, 28, 28], grid: Array(test_bytes.images[16..<test_bytes.images.count - (28 * 28 * (10000 - use))]).map { Float($0) })
+        let labs: [[Float]] = Array(test_bytes.labels[8..<test_bytes.labels.count - (10000 - use)]).map {
+            var arr = Array(repeating: Float(0.0), count: 10)
             arr[Int($0)] = 1.0
             return arr
         }
-        let test_labels = DTensor(shape: [use, 10], grid: labs.flatMap { $0 })
+        let test_labels = FTensor(shape: [use, 10], grid: labs.flatMap { $0 })
         return (test_images / 255.0, test_labels)
     }
     
     func testCNNMnist() throws {
         // Make our layers
-        let sequence = Sequence<DTensor>([
+        let sequence = Sequence<FTensor>([
             Conv2D(to: 1, out: 24, size: 5),
             LReLU(),
             Pool2DMax(size: 2, stride: 2),
@@ -989,26 +989,26 @@ final class SML2NeuralTests: XCTestCase {
 //            print("no saved params to load...")
 //        }
         // Make other necessary nodes
-        let expected = Placeholder<DTensor>()
-        let avg = Placeholder<DTensor>()
-        let avg_lm = Placeholder<DTensor>()
-        let lm = Constant<DTensor>(0.0001)
+        let expected = Placeholder<FTensor>()
+        let avg = Placeholder<FTensor>()
+        let avg_lm = Placeholder<FTensor>()
+        let lm = Constant<FTensor>(0.0001)
         // Binary Cross Entropy Loss Function (Vectorized)! also our computational graph lol
         let J = avg * Constant(-1.0) * ((sequence.predicted.transpose() + Constant(0.00000001)).log() <*> expected + ((Constant(1.0) - sequence.predicted.transpose() + Constant(0.00000001)).log() <*> (Constant(1.0) - expected))).sumDiag() + avg_lm * (lm * sequence.regularizer)
         // Make and build session
-        let session = Session<Adam<DTensor>>(parallel: parallel)
+        let session = Session<Adam<FTensor>>(parallel: parallel)
         session.build(J)
         // *** TRAIN ***
         print("loading mnist...")
         var (X, Y) = mnist()
         // Set up optimizer
-        let optim = Adam<DTensor>()
+        let optim = Adam<FTensor>()
         // Minibatch
         var b = 50
         // Set up our number of batches
-        var batches = Int(ceil(Double(X.shape[0]) / Double(b)))
+        var batches = Int(ceil(Float(X.shape[0]) / Float(b)))
         // Set up all of our mini batchs in advance
-        var mini_batches = [(DTensor, DTensor)](repeating: (DTensor(shape: [], grid: []), DTensor(shape: [], grid: [])), count: batches)
+        var mini_batches = [(FTensor, FTensor)](repeating: (FTensor(shape: [], grid: []), FTensor(shape: [], grid: [])), count: batches)
         print("partioning batches...")
         // Partition X and Y
         for s in 0..<batches {
@@ -1033,16 +1033,16 @@ final class SML2NeuralTests: XCTestCase {
             // Adam requires incrementing t step each epoch
             optim.inc()
             // Set up empty loss for this epoch
-            var loss = 0.0
+            var loss: Float = 0.0
             // Run mini batch gradient descent to train network
             var curr_batch = 0
             for (X_mini, YT_mini) in mini_batches {
                 // Get mini batch size (number of images in this batch)
-                let m_mini = Double(X_mini.shape[0])
+                let m_mini = Float(X_mini.shape[0])
                 let batch_start = CFAbsoluteTimeGetCurrent()
                 // Reset our placeholders for our input data and avg coefficient
                 // X not transposed since images will be transposed when we flatten, Y transposed since predicted will be transposed when doing math with expected
-                session.pass([sequence.input: X_mini, expected: YT_mini, avg: DTensor(1.0 / (m_mini)), avg_lm: DTensor(1.0 / (m_mini))])
+                session.pass([sequence.input: X_mini, expected: YT_mini, avg: FTensor(1.0 / (m_mini)), avg_lm: FTensor(1.0 / (m_mini))])
                 // Forward and backward
                 let (out, grads) = session.run(J)
                 // Run gradient descent with Adam optimizer
@@ -1053,7 +1053,7 @@ final class SML2NeuralTests: XCTestCase {
                 print("Finished Batch \(curr_batch + 1) of \(batches) in Epoch \(i + 1) of \(epochs)")
                 // Calculate time left
                 let batch_time = CFAbsoluteTimeGetCurrent() - batch_start
-                let seconds = Int(Double(batch_time) * Double(passes - pass))
+                let seconds = Int(Float(batch_time) * Float(passes - pass))
                 print("--------------- Est Remaining: \(seconds / 3600) Hours, \((seconds % 3600) / 60) Minutes, \((seconds % 3600) % 60) Seconds ---------------")
                 // Add to loss
                 loss += out.grid.first!
@@ -1061,7 +1061,7 @@ final class SML2NeuralTests: XCTestCase {
                 curr_batch += 1
             }
             // Average loss from each batches lsos
-            loss = loss / Double(batches)
+            loss = loss / Float(batches)
             // Display loss
             print("*****************************************************************************")
             print("")
@@ -1072,7 +1072,7 @@ final class SML2NeuralTests: XCTestCase {
         }
         // Calculate time taken
         let time = CFAbsoluteTimeGetCurrent() - start
-        let seconds = Int(Double(time))
+        let seconds = Int(Float(time))
         print("Time taken: \(seconds / 3600) Hours, \((seconds % 3600) / 60) Minutes, \((seconds % 3600) % 60) Seconds")
         // *** TEST ***
         // Test our model
@@ -1084,9 +1084,9 @@ final class SML2NeuralTests: XCTestCase {
         // Minibatch
         b = 50
         // Set up our number of batches
-        batches = Int(ceil(Double(X.shape[0]) / Double(b)))
+        batches = Int(ceil(Float(X.shape[0]) / Float(b)))
         // Set up all of our mini batchs in advance
-        mini_batches = [(DTensor, DTensor)](repeating: (DTensor(shape: [], grid: []), DTensor(shape: [], grid: [])), count: batches)
+        mini_batches = [(FTensor, FTensor)](repeating: (FTensor(shape: [], grid: []), FTensor(shape: [], grid: [])), count: batches)
         print("partioning test batches...")
         // Partition X and Y
         for s in 0..<batches {
@@ -1101,15 +1101,15 @@ final class SML2NeuralTests: XCTestCase {
             mini_batches[s] = (X_mini, YT_mini)
         }
         // Set up empty loss for this epoch
-        var loss = 0.0
+        var loss: Float = 0.0
         var curr_batch = 0
         print("gathering test loss...")
         for (X_mini, YT_mini) in mini_batches {
             // Get mini batch size (number of images in this batch)
-            let m_mini = Double(X_mini.shape[0])
+            let m_mini = Float(X_mini.shape[0])
             // Reset our placeholders for our input data and avg coefficient
             // X not transposed since images will be transposed when we flatten, Y transposed since predicted will be transposed when doing math with expected
-            session.pass([sequence.input: X_mini, expected: YT_mini, avg: DTensor(1.0 / (m_mini)), avg_lm: DTensor(1.0 / (m_mini))])
+            session.pass([sequence.input: X_mini, expected: YT_mini, avg: FTensor(1.0 / (m_mini)), avg_lm: FTensor(1.0 / (m_mini))])
             // Forward and backward
             let (out, _) = session.run(J, till: J)
             // Add to loss
@@ -1123,7 +1123,7 @@ final class SML2NeuralTests: XCTestCase {
         }
         print("")
         // Average loss from each batches lsos
-        loss = loss / Double(batches)
+        loss = loss / Float(batches)
         var correct = 0
         print("predicting...")
         for i in 0..<X.shape[0] {
@@ -1138,7 +1138,7 @@ final class SML2NeuralTests: XCTestCase {
         }
         print("")
         // Get accuracy
-        let accuracy = Double(correct) / Double(X.shape[0])
+        let accuracy = Float(correct) / Float(X.shape[0])
         print("Accuracy on test set: \(accuracy), Loss on test set: \(loss)")
         print("")
         

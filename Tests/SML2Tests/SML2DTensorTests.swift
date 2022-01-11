@@ -8,7 +8,7 @@
 import XCTest
 @testable import SML2
 
-final class SML2TensorTests: XCTestCase {
+final class SML2DTensorTests: XCTestCase {
     
     func testInits() throws {
         var tensor: DTensor
