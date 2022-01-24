@@ -1,6 +1,6 @@
 //
 //  DTensor.swift
-//  
+//
 //
 //  Created by Sahil Srivastava on 1/10/22.
 //
@@ -16,6 +16,11 @@
 //  what each Accelerate method is doing, it really helped
 //  write this struct (and just improve my understanding
 //  of coding).
+//
+//  Handy References:
+//  Fig 1.0: https://github.com/scikit-learn/scikit-learn/blob/7389dbac82d362f296dc2746f10e43ffa1615660/sklearn/preprocessing/data.py#L70
+//  Fig 2.0: https://github.com/keras-team/keras/blob/v2.7.0/keras/layers/normalization/batch_normalization.py#L885
+//  Fig 3.0: https://github.com/keras-team/keras/blob/998efc04eefa0c14057c1fa87cab71df5b24bf7e/keras/initializations.py#L41
 
 import Foundation
 import Accelerate
@@ -475,22 +480,7 @@ extension DTensor {
     }
     // Could be optimized? 10X slower than vDSP_imgfir (conv)
     public func pool2D_max(size: Int) -> DTensor {
-        var res = DTensor(shape: [shape[0] - size + 1, shape[1] - size + 1], repeating: 0)
-        var idx = 0
-        for r in 0..<shape[0] {
-            if r < shape[0] && r + size <= shape[0] {
-                let pools = self[rows: r..<r + size]
-                for c in 0..<shape[1] {
-                    if c < shape[1] && c + size <= shape[1] {
-                        let pool = pools[cols: c..<c + size]
-                        // Max of pool
-                        res.grid[idx] = pool.max()
-                        idx += 1
-                    }
-                }
-            }
-        }
-        return res
+        return pool2D_max(size: size).0
     }
     // Could be optimized? 10X slower than vDSP_imgfir (conv)
     public func pool2D_max(size: Int, strd: Int = 1) -> (DTensor, [Int]) {
@@ -498,26 +488,38 @@ extension DTensor {
         var res = DTensor(shape: [((shape[0] - size) / strd) + 1, ((shape[1] - size) / strd) + 1], repeating: 0)
         var positions = Array(repeating: 0, count: res.grid.count)
         var idx = 0
-        for r in stride(from: 0, to: shape[0], by: strd) {
-            if r < shape[0] && r + size <= shape[0] {
-                let pools = self[rows: r..<r + size]
-                for c in stride(from: 0, to: shape[1], by: strd) {
-                    if c < shape[1] && c + size <= shape[1] {
-                        let pool = pools[cols: c..<c + size]
-                        // Arg max of pool
-                        let (max, offset) = pool.max()
-                        // Gives us offset for our pool wrt to our main tensor
-                        let (pool_row, pool_col) = (offset / pool.shape[1], offset % pool.shape[1])
-                        res.grid[idx] = max
-                        // Make our true max position based wrt to our main tensor
-                        let pos = (r + pool_row) * shape[1] + (c + pool_col)
-                        // Set this position in our indicies
-                        positions[idx] = pos
-                        idx += 1
+        for r in stride(from: 0, through: shape[0] - size, by: strd) {
+            for c in stride(from: 0, through: shape[1] - size, by: strd) {
+                var pool = Array(repeating: (val: 0.0, idx: -1), count: size * size)
+                for rp in r..<r + size {
+                    for cp in c..<c + size {
+                        let flat_idx = rp * shape[1] + cp
+                        pool[(rp * size + cp) - (r * size + c)] = (grid[flat_idx], flat_idx)
                     }
                 }
+                let max = pool.max(by: { $0.val < $1.val })!
+                res.grid[idx] = max.val
+                positions[idx] = max.idx
+                idx += 1
             }
         }
+//        DispatchQueue.concurrentPerform(iterations: shape[0] - size + 1) { r in
+//            guard r % strd == 0 else { return }
+//            DispatchQueue.concurrentPerform(iterations: shape[1] - size + 1) { c in
+//                guard c % strd == 0 else { return }
+//                var pool = Array(repeating: (val: 0.0, idx: -1), count: size * size)
+//                for rp in r..<r + size {
+//                    for cp in c..<c + size {
+//                        let flat_idx = rp * shape[1] + cp
+//                        pool[(rp * size + cp) - (r * size + c)] = (grid[flat_idx], flat_idx)
+//                    }
+//                }
+//                let max = pool.max(by: { $0.val < $1.val })!
+//                let idx = ((r * shape[1] + c) - r * (shape[1] - res.shape[1])) / strd
+//                res.grid[idx] = max.val
+//                positions[idx] = max.idx
+//            }
+//        }
         return (res, positions)
     }
     public func pad(_ w: Int, _ h: Int) -> DTensor {
@@ -671,6 +673,17 @@ fileprivate func trueAdd(_ lhs: DTensor, _ rhs: DTensor) -> DTensor {
     } else if lhs.shape.count == 3 && rhs.shape.count == 2 {
         // 3D-Tensor + Matrix
         return trueAdd(rhs, lhs)
+    } else if lhs.shape.count == 3 && rhs.shape.count == 4 {
+        if lhs.shape[0] == rhs.shape[1] && lhs.shape[1] == rhs.shape[2] && lhs.shape[2] == rhs.shape[3] {
+            // 3D-Tensor + 4D-Tensor
+            var t = rhs
+            for n in 0..<rhs.shape[0] {
+                t[t3D: n] = trueAdd(lhs, rhs[t3D: n])
+            }
+            return t
+        }
+    } else if lhs.shape.count == 4 && rhs.shape.count == 3 {
+        return trueAdd(rhs, lhs)
     }
     fatalError("Cannot elementwise add (or subtract) lhs shape of \(lhs.shape) with rhs shape of \(rhs.shape)")
 }
@@ -805,6 +818,17 @@ fileprivate func trueMult(_ lhs: DTensor, _ rhs: DTensor) -> DTensor {
         }
     } else if lhs.shape.count == 3 && rhs.shape.count == 2 {
         // 3D-Tensor * Matrix
+        return trueMult(rhs, lhs)
+    } else if lhs.shape.count == 3 && rhs.shape.count == 4 {
+        if lhs.shape[0] == rhs.shape[1] && lhs.shape[1] == rhs.shape[2] && lhs.shape[2] == rhs.shape[3] {
+            // 3D-Tensor * 4D-Tensor
+            var t = rhs
+            for n in 0..<rhs.shape[0] {
+                t[t3D: n] = trueMult(lhs, rhs[t3D: n])
+            }
+            return t
+        }
+    } else if lhs.shape.count == 4 && rhs.shape.count == 3 {
         return trueMult(rhs, lhs)
     }
     fatalError("Cannot elementwise multiply (or divide) lhs shape of \(lhs.shape) with rhs shape of \(rhs.shape)")
@@ -969,37 +993,140 @@ extension DTensor {
         }
         return result
     }
-    // NEEDS REFACTORING
     public func sum(axis: Int, keepDim: Bool = false) -> DTensor {
         var newShape = shape
-        // Keeping dimensions
+        // Check if keeping extra dimension
         if keepDim { newShape[axis] = 1 } else { newShape.remove(at: axis) }
         // Check for summing 1 size axis
         if shape[axis] == 1 { return DTensor(shape: newShape, grid: grid) }
         precondition(axis < shape.count, "Axis not present in this tensor")
-        // Remove extra shape
-        if shape.main.count == 1 {
-            return DTensor(shape: newShape, grid: [self.sum()])
-        } else if shape.main.count == 2 {
-            var t = DTensor(shape: newShape, repeating: 0)
+        // Different approach for last axis
+        if axis == shape.count - 1 {
+            // Make new tensor
+            var t = DTensor(shape: newShape, repeating: 0.0)
+            // size of vectors being summed (also stride)
+            let N = shape[axis]
+            // Length of tensor
+            let count = grid.count
             grid.withUnsafeBufferPointer { gridPtr in
                 t.grid.withUnsafeMutableBufferPointer { tPtr in
-                    if axis == 0 {
-                        for a in 0..<shape.main[1] {
-                            vDSP_sveD(gridPtr.baseAddress! + a, shape.main[1], tPtr.baseAddress! + a, vDSP_Length(shape.main[0]))
-                        }
-                    } else {
-                        for a in 0..<shape.main[0] {
-                            vDSP_sveD(gridPtr.baseAddress! + a * shape.main[1], 1, tPtr.baseAddress! + a, vDSP_Length(shape.main[1]))
-                        }
+                    // Incrementer for position in t
+                    var inc = 0
+                    // Stride through for summation
+                    for i in stride(from: 0, to: count, by: N) {
+                        var result: Double = 0.0
+                        // Sum this N length vector
+                        vDSP_sveD(gridPtr.baseAddress! + i, 1, &result, vDSP_Length(N))
+                        // Set to our position in t
+                        tPtr[inc] = result
+                        inc += 1
                     }
                 }
             }
             return t
         } else {
-            // ND how tf?
-            fatalError("ND sum along axis not implemented yet")
+            // Make new tensor
+            var t = DTensor(shape: newShape, repeating: 0.0)
+            // size of vectors being summed
+            let N = shape[axis + 1..<shape.count].reduce(1) { $0 * $1 }
+            // Length of tensor
+            let count = grid.count
+            grid.withUnsafeBufferPointer { gridPtr in
+                t.grid.withUnsafeMutableBufferPointer { tPtr in
+                    // Incrementer for position in t
+                    var inc = 0
+                    // Stride through for summation
+                    for i in stride(from: 0, to: count, by: N) {
+                        vDSP_vaddD(gridPtr.baseAddress! + i, 1, tPtr.baseAddress! + inc / shape[axis] * N, 1, tPtr.baseAddress! + inc / shape[axis] * N, 1, vDSP_Length(N))
+                        inc += 1
+                    }
+                }
+            }
+            return t
         }
+    }
+    public func sum(axes: ClosedRange<Int>, keepDim: Bool = false) -> DTensor {
+        return self.sum(axes: Range(axes), keepDim: keepDim)
+    }
+    public func sum(axes: Range<Int>, keepDim: Bool = false) -> DTensor {
+        precondition(axes.upperBound - axes.lowerBound == axes.count && axes.upperBound <= shape.count && axes.lowerBound >= 0, "Incompatible range for shape")
+        // check for all encompassing range, and singular range
+        if axes.lowerBound == 0 && axes.upperBound == shape.count {
+            // sum everything for all encompassing
+            let val = self.sum()
+            let newShape = keepDim ? Array(repeating: 1, count: shape.count) : []
+            return DTensor(shape: newShape, grid: [val])
+        } else if axes.count == 1 {
+            // basically just one axis
+            return self.sum(axis: axes.lowerBound, keepDim: keepDim)
+        }
+        // make new shpae
+        var newShape = shape
+        // type of summation
+        if axes.lowerBound == 0 {
+            // Check if keeping extra dimension
+            if keepDim {
+                for axis in axes {
+                    newShape[axis] = 1
+                }
+            } else {
+                while newShape.count > (shape.count - axes.count) {
+                    newShape.remove(at: 0)
+                }
+            }
+            // leading, make empty tensor
+            var t = DTensor(shape: newShape, repeating: 0.0)
+            // size of vectors being summed
+            let N = shape[axes.upperBound..<shape.count].reduce(1) { $0 * $1 }
+            // Length of tensor
+            let count = grid.count
+            grid.withUnsafeBufferPointer { gridPtr in
+                t.grid.withUnsafeMutableBufferPointer { tPtr in
+                    // Incrementer for position in t
+                    var inc = 0
+                    // Stride through for summation
+                    for i in stride(from: 0, to: count, by: N) {
+                        vDSP_vaddD(gridPtr.baseAddress! + i, 1, tPtr.baseAddress! + inc / shape[axes].reduce(1) { $0 * $1 } * N, 1, tPtr.baseAddress! + inc / shape[axes].reduce(1) { $0 * $1 } * N, 1, vDSP_Length(N))
+                        inc += 1
+                    }
+                }
+            }
+            return t
+        } else if axes.upperBound == shape.count {
+            // Check if keeping extra dimension
+            if keepDim {
+                for axis in axes {
+                    newShape[axis] = 1
+                }
+            } else {
+                while newShape.count > (shape.count - axes.count) {
+                    newShape.remove(at: newShape.count - 1)
+                }
+            }
+            // trailing, make empty tensor
+            var t = DTensor(shape: newShape, repeating: 0.0)
+            // size of vectors being summed (also stride)
+            let N = shape[axes].reduce(1) { $0 * $1 }
+            // Length of tensor
+            let count = grid.count
+            grid.withUnsafeBufferPointer { gridPtr in
+                t.grid.withUnsafeMutableBufferPointer { tPtr in
+                    // Incrementer for position in t
+                    var inc = 0
+                    // Stride through for summation
+                    for i in stride(from: 0, to: count, by: N) {
+                        var result: Double = 0.0
+                        // Sum this N length vector
+                        vDSP_sveD(gridPtr.baseAddress! + i, 1, &result, vDSP_Length(N))
+                        // Set to our position in t
+                        tPtr[inc] = result
+                        inc += 1
+                    }
+                }
+            }
+            return t
+        }
+        fatalError("Not implemented")
     }
     // Calculates mean and std for each column!
     public func zscore() -> (norm: DTensor, mean: DTensor, std: DTensor) {
@@ -1018,28 +1145,47 @@ extension DTensor {
                 }
             }
         }
-        t.shape.insert(contentsOf: shape.leftover.view, at: 0)
         return (t, mean, std)
     }
     // Calculates mean and std for each pixel!
+    public func zscore_image_norm(mean: DTensor, std: DTensor) -> DTensor {
+        if shape.count == 4 && mean.shape.count == 1 && mean.shape[0] == shape[1] && std.shape.count == 1 && std.shape[0] == shape[1] {
+            var t = self
+            for n in 0..<shape[0] {
+                let nthImage = self[t3D: n]
+                for d in 0..<shape[1] {
+                    t[t3D: n][mat: d] = (nthImage[mat: d] - mean[val: d]) / std[val: d]
+                }
+            }
+            return t
+        } else if shape.count == 3 && mean.shape.count == 1 && mean.shape[0] == shape[0] && std.shape.count == 1 && std.shape[0] == shape[0] {
+            var t = self
+            for d in 0..<shape[0] {
+                t[mat: d] = (self[mat: d] - mean[val: d]) / std[val: d]
+            }
+            return t
+        }
+        fatalError("Incompatible type for zscore image norm")
+    }
     public func zscore_image() -> (norm: DTensor, mean: DTensor, std: DTensor) {
         precondition(shape.count == 4, "Incompatible type for zscore image normalization, must be a 4D-Tensor")
-        var t = self
-        var mean = DTensor(shape: [shape[1], shape[2], shape[3]], repeating: 0)
-        var std = DTensor(shape: [shape[1], shape[2], shape[3]], repeating: 0)
+        var channel_avgs = self.sum(axes: 2...3) / Double(shape[2] * shape[3])
+        var mean = DTensor(shape: [shape[1]], repeating: 0)
+        var std = DTensor(shape: [shape[1]], repeating: 0)
         mean.grid.withUnsafeMutableBufferPointer { meanPtr in
             std.grid.withUnsafeMutableBufferPointer { stdPtr in
-                let image_size = shape[1] * shape[2] * shape[3]
-                for p in 0..<image_size {
-                    t.grid.withUnsafeMutableBufferPointer { tPtr in
-                        grid.withUnsafeBufferPointer { gridPtr in
-                            vDSP_normalizeD(gridPtr.baseAddress! + p, image_size, tPtr.baseAddress! + p, image_size, meanPtr.baseAddress! + p, stdPtr.baseAddress! + p, vDSP_Length(shape[0]))
-                        }
+                for c in 0..<shape[1] {
+                    channel_avgs.grid.withUnsafeMutableBufferPointer { cPtr in
+                        // Store channel mean
+                        vDSP_meanvD(cPtr.baseAddress! + c, shape[1], meanPtr.baseAddress! + c, vDSP_Length(shape[0]))
+                        // Find feature std
+                        vDSP_measqvD(cPtr.baseAddress! + c, shape[1], stdPtr.baseAddress! + c, vDSP_Length(shape[0]))
+                        stdPtr[c] = (stdPtr[c] - meanPtr[c] * meanPtr[c] + 0.0001).squareRoot()
                     }
                 }
             }
         }
-        return (t, mean, std)
+        return (self.zscore_image_norm(mean: mean, std: std), mean, std)
     }
 }
 // MARK: Activation Functions

@@ -745,7 +745,20 @@ public final class Session<Optim: Optimizer> {
         }
         // Now take our gradient step for our params
         for i in 0..<params.count {
-            params[i].out! = params[i].out! - lr * optim_grads[i]
+            // Set up this params grad
+            var curr_optim_grad = optim_grads[i]
+            // Check if gradient clipping enabled
+            if let threshold = optim.clip {
+                // Norm for clipping threshold
+                let norm = optim_grads[i].pow(2).sum().squareRoot()
+                // Clip if above threshold
+                if norm > threshold {
+                    // Renormalize grad if clipping
+                    curr_optim_grad = optim_grads[i] * threshold / norm
+                }
+            }
+            // Take gradient step
+            params[i].out! = params[i].out! - lr * curr_optim_grad
         }
     }
 }
@@ -754,6 +767,8 @@ public final class Session<Optim: Optimizer> {
 public protocol Optimizer {
     
     associatedtype Tensor: Tensorable
+    
+    var clip: Tensor.Scalar? {get}
     
     func gradients(grads_ptr: UnsafeBufferPointer<Tensor>) -> [Tensor]
 }
@@ -768,10 +783,13 @@ public final class Adam<Tensor: Tensorable>: Optimizer {
     private var b2: Tensor.Scalar
     private var t: Int
     
-    public init(b1: Tensor.Scalar = 0.9, b2: Tensor.Scalar = 0.999) {
+    public let clip: Tensor.Scalar?
+    
+    public init(b1: Tensor.Scalar = 0.9, b2: Tensor.Scalar = 0.999, clip: Tensor.Scalar? = nil) {
         self.b1 = b1
         self.b2 = b2
         self.t = 0
+        self.clip = clip
     }
     
     public func inc() {

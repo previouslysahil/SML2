@@ -298,10 +298,10 @@ final class SML2NeuralTests: XCTestCase {
             loss = loss / Double(batches)
             print("Loss \(loss), Epoch \(i + 1)")
         }
-//        // Set BatchNorm layers to test
-//        for batch_norm in sequence.batch_norms {
-//            batch_norm.training = false
-//        }
+        // Set BatchNorm layers to test
+        for batch_norm in sequence.batch_norms {
+            batch_norm.training = false
+        }
         // Predict on example
         let test1: [Double] = [0.45, 0.21, 0.89]
         // Rset our placeholder for our input data
@@ -395,10 +395,10 @@ final class SML2NeuralTests: XCTestCase {
             loss = loss / Double(batches)
             print("Loss \(loss), Epoch \(i + 1)")
         }
-//        // Set BatchNorm layers to test
-//        for batch_norm in sequence.batch_norms {
-//            batch_norm.training = false
-//        }
+        // Set BatchNorm layers to test
+        for batch_norm in sequence.batch_norms {
+            batch_norm.training = false
+        }
         // Predict on example
         let test1: [Double] = [1.0]
         let test2: [Double] = [4.0]
@@ -508,10 +508,10 @@ final class SML2NeuralTests: XCTestCase {
             loss = loss / Double(batches)
             print("Loss \(loss), Epoch \(i + 1)")
         }
-//        // Set BatchNorm layers to test
-//        for batch_norm in sequence.batch_norms {
-//            batch_norm.training = false
-//        }
+        // Set BatchNorm layers to test
+        for batch_norm in sequence.batch_norms {
+            batch_norm.training = false
+        }
         // Predict on example
         let test1: [Double] = [1.0]
         let test2: [Double] = [5.0]
@@ -893,6 +893,201 @@ final class SML2NeuralTests: XCTestCase {
             XCTAssert(abs(outTest - out.grid.first!) < eps, "hand written pool out vs pool layer out")
         }
     }
+    
+    func testBatchNormLayer() throws {
+        let dt: [[Double]] = [[34, 64, 64, 46, 436], [66, 46, 46, 936, 167], [53, 57, 43, 57, 324], [532, 65, 67, 97, 56], [23, 45, 234, 46, 25]].map { $0.map { $0 + Double.random(in: 0..<6) } }
+        let dataTest = DTensor(dt).transpose()
+        let batchNorm = BatchNorm(Variable(dataTest), to: 5)
+        let J = batchNorm.sum()
+        let session = Session<Adam<DTensor>>(parallel: parallel)
+        session.build(J)
+        session.pass([batchNorm.input: dataTest])
+        let (out, grads) = session.run(J)
+        let gammaTest = batchNorm.gamma.out!
+        let betaTest = batchNorm.beta.out!
+//            print("----------\n", out)
+//            print(grads[J] ?? "NIL", grads[conv.input] ?? "NIL", grads[conv.kernel] ?? "NIL")
+        func loss(_ input: DTensor, _ gamma: DTensor, _ beta: DTensor) -> Double {
+            let (data_norm, _, _) = input.transpose().zscore()
+            return (gamma * data_norm.transpose() + beta).sum()
+        }
+        let outTest = loss(dataTest, gammaTest, betaTest)
+        // Test input
+        func get_grad_data_numericals(_ pos_data: DTensor, _ neg_data: DTensor, idx: Int) {
+            let grad_data_numerical = (loss(pos_data, gammaTest, betaTest) - loss(neg_data, gammaTest, betaTest)) / (2.0 * eps)
+            
+            let diff_data = abs(grads[batchNorm.input]!.grid[idx] - grad_data_numerical)
+//            print(diff_data, grads[batchNorm.input]!.grid[idx], grad_data_numerical, idx, "data")
+            XCTAssert(diff_data < bound, "analytical vs numerical gradient check for dataTest")
+        }
+        for i in 0..<dataTest.grid.count {
+            var pos_grid = dataTest.grid
+            pos_grid[i] = pos_grid[i] + eps
+            var neg_grid = dataTest.grid
+            neg_grid[i] = neg_grid[i] - eps
+            let pos_data = DTensor(shape: dataTest.shape, grid: pos_grid)
+            let neg_data = DTensor(shape: dataTest.shape, grid: neg_grid)
+            get_grad_data_numericals(pos_data, neg_data, idx: i)
+        }
+        // Test gamma
+        func get_grad_gamma_numericals(_ pos_gamma: DTensor, _ neg_gamma: DTensor, idx: Int) {
+            let grad_gamma_numerical = (loss(dataTest, pos_gamma, betaTest) - loss(dataTest, neg_gamma, betaTest)) / (2.0 * eps)
+            
+            let diff_gamma = abs(grads[batchNorm.gamma]!.grid[idx] - grad_gamma_numerical)
+//            print(diff_gamma, grads[batchNorm.gamma]!.grid[idx], grad_gamma_numerical, idx, "gamma")
+            XCTAssert(diff_gamma < bound, "analytical vs numerical gradient check for gamma")
+        }
+        for i in 0..<gammaTest.grid.count {
+            var pos_grid = gammaTest.grid
+            pos_grid[i] = pos_grid[i] + eps
+            var neg_grid = gammaTest.grid
+            neg_grid[i] = neg_grid[i] - eps
+            let pos_gamma = DTensor(shape: gammaTest.shape, grid: pos_grid)
+            let neg_gamma = DTensor(shape: gammaTest.shape, grid: neg_grid)
+            get_grad_gamma_numericals(pos_gamma, neg_gamma, idx: i)
+        }
+        // Test beta
+        func get_grad_beta_numericals(_ pos_beta: DTensor, _ neg_beta: DTensor, idx: Int) {
+            let grad_beta_numerical = (loss(dataTest, gammaTest, pos_beta) - loss(dataTest, gammaTest, neg_beta)) / (2.0 * eps)
+            
+            let diff_beta = abs(grads[batchNorm.beta]!.grid[idx] - grad_beta_numerical)
+//            print(diff_beta, idx, "beta")
+            XCTAssert(diff_beta < bound, "analytical vs numerical gradient check for beta")
+        }
+        for i in 0..<betaTest.grid.count {
+            var pos_grid = betaTest.grid
+            pos_grid[i] = pos_grid[i] + eps
+            var neg_grid = betaTest.grid
+            neg_grid[i] = neg_grid[i] - eps
+            let pos_beta = DTensor(shape: betaTest.shape, grid: pos_grid)
+            let neg_beta = DTensor(shape: betaTest.shape, grid: neg_grid)
+            get_grad_beta_numericals(pos_beta, neg_beta, idx: i)
+        }
+        XCTAssert(batchNorm.input.out!.shape == grads[batchNorm.input]!.shape, "input shape same as grad shape")
+        XCTAssert(batchNorm.gamma.out!.shape == grads[batchNorm.gamma]!.shape, "gamma shape same as grad shape")
+        XCTAssert(batchNorm.beta.out!.shape == grads[batchNorm.beta]!.shape, "beta shape same as grad shape")
+        XCTAssert(abs(outTest - out.grid.first!) < eps, "hand written pool out vs pool layer out")
+    }
+    
+    func testBatchNorm2DLayer() throws {
+        let dt1: [[Double]] = [[34, 64, 64, 46, 436], [66, 46, 46, 936, 167], [53, 57, 43, 57, 324], [532, 65, 67, 97, 56], [23, 45, 234, 46, 25]].map { $0.map { $0 + Double.random(in: 0..<6) } }
+        let dt2 = dt1.map { $0.map { $0 + Double.random(in: 24..<49) } }
+        var dt = [[dt1, dt2], [dt1, dt2].map { $0.map { $0.map { $0 + Double.random(in: 392..<849) } } }]
+        for i in 0..<4 {
+            dt.append([dt1, dt2].map { $0.map { $0.map { $0 * (Double(i) + 4.0) + Double.random(in: 392..<849) } } })
+        }
+        let dataTest = DTensor(dt)
+        let batchNorm = BatchNorm2D(Variable(dataTest), to: 2)
+        let J = batchNorm.sum()
+        let session = Session<Adam<DTensor>>(parallel: parallel)
+        session.build(J)
+        session.pass([batchNorm.input: dataTest])
+        let (out, grads) = session.run(J)
+        let gammaTest = batchNorm.gamma.out!
+        let betaTest = batchNorm.beta.out!
+//            print("----------\n", out)
+//            print(grads[J] ?? "NIL", grads[conv.input] ?? "NIL", grads[conv.kernel] ?? "NIL")
+        func loss(_ input: DTensor, _ gamma: DTensor, _ beta: DTensor) -> Double {
+            let (data_norm, _, _) = input.zscore_image()
+            
+            func cmul(_ nd: DTensor, with vec: DTensor) -> DTensor {
+                if nd.shape.count == 4 && vec.shape.count == 1 && vec.shape[0] == nd.shape[1] {
+                    var t = nd
+                    for n in 0..<nd.shape[0] {
+                        let nthImage = nd[t3D: n]
+                        for d in 0..<nd.shape[1] {
+                            t[t3D: n][mat: d] = nthImage[mat: d] * vec[val: d]
+                        }
+                    }
+                    return t
+                } else if nd.shape.count == 3 && vec.shape.count == 1 && vec.shape[0] == nd.shape[0] {
+                    var t = nd
+                    for d in 0..<nd.shape[0] {
+                        t[mat: d] = nd[mat: d] * vec[val: d]
+                    }
+                    return t
+                }
+                fatalError("Incompatible type for channel wise multiplication")
+            }
+            
+            func cadd(_ nd: DTensor, with vec: DTensor) -> DTensor {
+                if nd.shape.count == 4 && vec.shape.count == 1 && vec.shape[0] == nd.shape[1] {
+                    var t = nd
+                    for n in 0..<nd.shape[0] {
+                        let nthImage = nd[t3D: n]
+                        for d in 0..<nd.shape[1] {
+                            t[t3D: n][mat: d] = nthImage[mat: d] + vec[val: d]
+                        }
+                    }
+                    return t
+                } else if nd.shape.count == 3 && vec.shape.count == 1 && vec.shape[0] == nd.shape[0] {
+                    var t = nd
+                    for d in 0..<nd.shape[0] {
+                        t[mat: d] = nd[mat: d] + vec[val: d]
+                    }
+                    return t
+                }
+                fatalError("Incompatible type for channel wise addition")
+            }
+            return cadd(cmul(data_norm, with: gamma), with: beta).sum()
+        }
+        let outTest = loss(dataTest, gammaTest, betaTest)
+        // Test input
+        func get_grad_data_numericals(_ pos_data: DTensor, _ neg_data: DTensor, idx: Int) {
+            let grad_data_numerical = (loss(pos_data, gammaTest, betaTest) - loss(neg_data, gammaTest, betaTest)) / (2.0 * eps)
+            
+            let diff_data = abs(grads[batchNorm.input]!.grid[idx] - grad_data_numerical)
+//            print(diff_data, grads[batchNorm.input]!.grid[idx], grad_data_numerical, idx, "data")
+            XCTAssert(diff_data < bound, "analytical vs numerical gradient check for dataTest")
+        }
+        for i in 0..<dataTest.grid.count {
+            var pos_grid = dataTest.grid
+            pos_grid[i] = pos_grid[i] + eps
+            var neg_grid = dataTest.grid
+            neg_grid[i] = neg_grid[i] - eps
+            let pos_data = DTensor(shape: dataTest.shape, grid: pos_grid)
+            let neg_data = DTensor(shape: dataTest.shape, grid: neg_grid)
+            get_grad_data_numericals(pos_data, neg_data, idx: i)
+        }
+        // Test gamma
+        func get_grad_gamma_numericals(_ pos_gamma: DTensor, _ neg_gamma: DTensor, idx: Int) {
+            let grad_gamma_numerical = (loss(dataTest, pos_gamma, betaTest) - loss(dataTest, neg_gamma, betaTest)) / (2.0 * eps)
+            
+            let diff_gamma = abs(grads[batchNorm.gamma]!.grid[idx] - grad_gamma_numerical)
+//            print(diff_gamma, grads[batchNorm.gamma]!.grid[idx], grad_gamma_numerical, idx, "gamma")
+            XCTAssert(diff_gamma < bound, "analytical vs numerical gradient check for gamma")
+        }
+        for i in 0..<gammaTest.grid.count {
+            var pos_grid = gammaTest.grid
+            pos_grid[i] = pos_grid[i] + eps
+            var neg_grid = gammaTest.grid
+            neg_grid[i] = neg_grid[i] - eps
+            let pos_gamma = DTensor(shape: gammaTest.shape, grid: pos_grid)
+            let neg_gamma = DTensor(shape: gammaTest.shape, grid: neg_grid)
+            get_grad_gamma_numericals(pos_gamma, neg_gamma, idx: i)
+        }
+        // Test beta
+        func get_grad_beta_numericals(_ pos_beta: DTensor, _ neg_beta: DTensor, idx: Int) {
+            let grad_beta_numerical = (loss(dataTest, gammaTest, pos_beta) - loss(dataTest, gammaTest, neg_beta)) / (2.0 * eps)
+            
+            let diff_beta = abs(grads[batchNorm.beta]!.grid[idx] - grad_beta_numerical)
+//            print(diff_beta, idx, "beta")
+            XCTAssert(diff_beta < bound, "analytical vs numerical gradient check for beta")
+        }
+        for i in 0..<betaTest.grid.count {
+            var pos_grid = betaTest.grid
+            pos_grid[i] = pos_grid[i] + eps
+            var neg_grid = betaTest.grid
+            neg_grid[i] = neg_grid[i] - eps
+            let pos_beta = DTensor(shape: betaTest.shape, grid: pos_grid)
+            let neg_beta = DTensor(shape: betaTest.shape, grid: neg_grid)
+            get_grad_beta_numericals(pos_beta, neg_beta, idx: i)
+        }
+        XCTAssert(batchNorm.input.out!.shape == grads[batchNorm.input]!.shape, "input shape same as grad shape")
+        XCTAssert(batchNorm.gamma.out!.shape == grads[batchNorm.gamma]!.shape, "gamma shape same as grad shape")
+        XCTAssert(batchNorm.beta.out!.shape == grads[batchNorm.beta]!.shape, "beta shape same as grad shape")
+        XCTAssert(abs(outTest - out.grid.first!) < eps, "hand written pool out vs pool layer out")
+    }
 
     func testFlatten() throws {
         let dt1: [[[Double]]] = [[[15, 24, 13, 44, 52], [12, 24, 35, 64, 85], [51, 22, 73, 94, 55], [11, 52, 36, 47, 59], [41, 62, 83, 94, 75]], [[14, 23, 23, 44, 56], [21, 23, 353, 54, 65], [61, 42, 35, 44, 25], [91, 2, 38, 64, 54], [19, 25, 53, 40, 55]]]
@@ -935,7 +1130,7 @@ final class SML2NeuralTests: XCTestCase {
         
         let train_bytes: (images: [UInt8], labels: [UInt8]) = ([UInt8](train_data.images), [UInt8](train_data.labels))
         
-        let use = 200
+        let use = 1000
         
         let train_images = FTensor(shape: [use, 1, 28, 28], grid: Array(train_bytes.images[16..<train_bytes.images.count - (28 * 28 * (60000 - use))]).map { Float($0) })
         let labs: [[Float]] = Array(train_bytes.labels[8..<train_bytes.labels.count - (60000 - use)]).map {
@@ -972,10 +1167,12 @@ final class SML2NeuralTests: XCTestCase {
         // Make our layers
         let sequence = Sequence<FTensor>([
             Conv2D(to: 1, out: 24, size: 5),
+//            BatchNorm2D(to: 24),
             LReLU(),
             Pool2DMax(size: 2, stride: 2),
             Flatten(),
             Linear(to: 3456, out: 256),
+//            BatchNorm(to: 256),
             LReLU(),
             Linear(to: 256, out: 10),
             Sigmoid()
@@ -994,7 +1191,7 @@ final class SML2NeuralTests: XCTestCase {
         let avg_lm = Placeholder<FTensor>()
         let lm = Constant<FTensor>(0.0001)
         // Binary Cross Entropy Loss Function (Vectorized)! also our computational graph lol
-        let J = avg * Constant(-1.0) * ((sequence.predicted.transpose() + Constant(0.00000001)).log() <*> expected + ((Constant(1.0) - sequence.predicted.transpose() + Constant(0.00000001)).log() <*> (Constant(1.0) - expected))).sumDiag() + avg_lm * (lm * sequence.regularizer)
+        let J = avg * Constant(-1.0) * ((sequence.predicted.transpose() + Constant(0.0001)).log() <*> expected + ((Constant(1.0) - sequence.predicted.transpose() + Constant(0.0001)).log() <*> (Constant(1.0) - expected))).sumDiag() + avg_lm * (lm * sequence.regularizer)
         // Make and build session
         let session = Session<Adam<FTensor>>(parallel: parallel)
         session.build(J)
@@ -1103,6 +1300,14 @@ final class SML2NeuralTests: XCTestCase {
         // Set up empty loss for this epoch
         var loss: Float = 0.0
         var curr_batch = 0
+        // Set BatchNorm2D layers to test
+        for batch_norm2D in sequence.batch_norms2D {
+            batch_norm2D.training = false
+        }
+        // Set BatchNorm layers to test
+        for batch_norm in sequence.batch_norms {
+            batch_norm.training = false
+        }
         print("gathering test loss...")
         for (X_mini, YT_mini) in mini_batches {
             // Get mini batch size (number of images in this batch)
@@ -1160,12 +1365,9 @@ final class SML2NeuralTests: XCTestCase {
 
 /*
  vDSP_imgfir is doing a mathematically correct convolution operation (it rotates kernel before running), WE WANT CROSS CORRELATION (maybe gradients are wrong check kernel rot 180, passing gradient check tho?)
- SumAxis needs refactoring!
+ Add batchnorm to sequential saving
  Pool is not stable, make it stable?
  Confirm pool stride works
- vDSP_imgfir with even kernel size strange behavior, investigate
  Conv net initialization (maybe done?)
- SumAxis for 3 >= tensors does not work
  Add custom print for tensor
- Test batchnorm layer is correct with 'hand' calculated gradients (already kinda did this but maybe confirm? maybe also do batchnorm the longer way?)
  */

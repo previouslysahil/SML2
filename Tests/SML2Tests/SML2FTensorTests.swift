@@ -408,11 +408,43 @@ final class SML2FTensorTests: XCTestCase {
         var tensor1: FTensor
 
         tensor1 = FTensor([[1, 2, 3, 4], [1, 1, 1, 1]])
-        XCTAssert(tensor1.sum(axis: 0, keepDim: true) == FTensor([[2, 3, 4, 5]]), "sum axis 0")
-        XCTAssert(tensor1.sum(axis: 0) == FTensor(shape: [4], grid: [2, 3, 4, 5]), "sum axis 0")
+        XCTAssert(tensor1.sum(axis: 0, keepDim: true) == FTensor([[2, 3, 4, 5]]), "sum axis 0 matrix")
+        XCTAssert(tensor1.sum(axis: 0) == FTensor(shape: [4], grid: [2, 3, 4, 5]), "sum axis 0 matrix")
 
-        XCTAssert(tensor1.sum(axis: 1, keepDim: true) == FTensor([[10], [4]]), "sum axis 0")
-        XCTAssert(tensor1.sum(axis: 1) == FTensor(shape: [2], grid: [10, 4]), "sum axis 0")
+        XCTAssert(tensor1.sum(axis: 1, keepDim: true) == FTensor([[10], [4]]), "sum axis 1 matrix")
+        XCTAssert(tensor1.sum(axis: 1) == FTensor(shape: [2], grid: [10, 4]), "sum axis 1 matrix")
+        
+        tensor1 = FTensor([[[1, 1, 1], [-1, -1, -1], [1, 1, 1]], [[2, 2, 2], [-2, -2, -2], [2, 2, 2]]])
+        XCTAssert(tensor1.sum(axis: 0, keepDim: true) == FTensor(shape: [1, 3, 3], grid: [3.0, 3.0, 3.0, -3.0, -3.0, -3.0, 3.0, 3.0, 3.0]), "sum axis 0 3D-Tensor")
+        XCTAssert(tensor1.sum(axis: 0) == FTensor(shape: [3, 3], grid: [3.0, 3.0, 3.0, -3.0, -3.0, -3.0, 3.0, 3.0, 3.0]), "sum axis 0 3D-Tensor")
+        
+        XCTAssert(tensor1.sum(axis: 1, keepDim: true) == FTensor(shape: [2, 1, 3], grid: [1.0, 1.0, 1.0, 2.0, 2.0, 2.0]), "sum axis 1 3D-Tensor")
+        XCTAssert(tensor1.sum(axis: 1) == FTensor(shape: [2, 3], grid: [1.0, 1.0, 1.0, 2.0, 2.0, 2.0]), "sum axis 1 3D-Tensor")
+        
+        XCTAssert(tensor1.sum(axis: 2, keepDim: true) == FTensor(shape: [2, 3, 1], grid: [3.0, -3.0, 3.0, 6.0, -6.0, 6.0]), "sum axis 2 3D-Tensor")
+        XCTAssert(tensor1.sum(axis: 2) == FTensor(shape: [2, 3], grid: [3.0, -3.0, 3.0, 6.0, -6.0, 6.0]), "sum axis 2 3D-Tensor")
+        
+        XCTAssert(tensor1.sum(axes: 1...2, keepDim: true) == FTensor(shape: [2, 1, 1], grid: [3.0, 6.0]), "sum axes 1 & 2 3D-Tensor")
+        XCTAssert(tensor1.sum(axes: 1...2) == FTensor(shape: [2], grid: [3.0, 6.0]), "sum axes 1 & 2 3D-Tensor")
+        XCTAssert(tensor1.sum(axes: 1...2, keepDim: true) == tensor1.sum(axis: 1, keepDim: true).sum(axis: 2, keepDim: true), "sum axes 1 & 2 3D-Tensor")
+        
+        XCTAssert(tensor1.sum(axes: 0...1, keepDim: true) == FTensor(shape: [1, 1, 3], grid: [3.0, 3.0, 3.0]), "sum axes 0 & 1 3D-Tensor")
+        XCTAssert(tensor1.sum(axes: 0...1) == FTensor(shape: [3], grid: [3.0, 3.0, 3.0]), "sum axes 0 & 1 3D-Tensor")
+        XCTAssert(tensor1.sum(axes: 0...1, keepDim: true) == tensor1.sum(axis: 0, keepDim: true).sum(axis: 1, keepDim: true), "sum axes 0 & 1 3D-Tensor")
+        
+        let cube: [[[Float]]] = [[[1, 1, 1], [-1, -1, -1], [1, 1, 1]], [[2, 2, 2], [-2, -2, -2], [2, 2, 2]]]
+        tensor1 = FTensor([cube, cube.map { $0.map { $0.map { $0 * -1.0 } } }])
+        XCTAssert(tensor1.sum(axis: 0, keepDim: true) == FTensor(shape: [1, 2, 3, 3], grid: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), "sum axis 0 4D-Tensor")
+        XCTAssert(tensor1.sum(axis: 0) == FTensor(shape: [2, 3, 3], grid: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), "sum axis 0 4D-Tensor")
+        
+        XCTAssert(tensor1.sum(axis: 1, keepDim: true) == FTensor(shape: [2, 1, 3, 3], grid: [3.0, 3.0, 3.0, -3.0, -3.0, -3.0, 3.0, 3.0, 3.0, -3.0, -3.0, -3.0, 3.0, 3.0, 3.0, -3.0, -3.0, -3.0]), "sum axis 1 4D-Tensor")
+        XCTAssert(tensor1.sum(axis: 1) == FTensor(shape: [2, 3, 3], grid: [3.0, 3.0, 3.0, -3.0, -3.0, -3.0, 3.0, 3.0, 3.0, -3.0, -3.0, -3.0, 3.0, 3.0, 3.0, -3.0, -3.0, -3.0]), "sum axis 1 4D-Tensor")
+        
+        XCTAssert(tensor1.sum(axis: 2, keepDim: true) == FTensor(shape: [2, 2, 1, 3], grid: [1.0, 1.0, 1.0, 2.0, 2.0, 2.0, -1.0, -1.0, -1.0, -2.0, -2.0, -2.0]), "sum axis 2 4D-Tensor")
+        XCTAssert(tensor1.sum(axis: 2) == FTensor(shape: [2, 2, 3], grid: [1.0, 1.0, 1.0, 2.0, 2.0, 2.0, -1.0, -1.0, -1.0, -2.0, -2.0, -2.0]), "sum axis 2 4D-Tensor")
+        
+        XCTAssert(tensor1.sum(axis: 3, keepDim: true) == FTensor(shape: [2, 2, 3, 1], grid: [3.0, -3.0, 3.0, 6.0, -6.0, 6.0, -3.0, 3.0, -3.0, -6.0, 6.0, -6.0]), "sum axis 3 4D-Tensor")
+        XCTAssert(tensor1.sum(axis: 3) == FTensor(shape: [2, 2, 3], grid: [3.0, -3.0, 3.0, 6.0, -6.0, 6.0, -3.0, 3.0, -3.0, -6.0, 6.0, -6.0]), "sum axis 3 4D-Tensor")
     }
 
     func testTranspose() throws {

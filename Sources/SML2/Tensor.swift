@@ -94,7 +94,10 @@ public protocol Tensorable {
     func sum() -> Scalar
     func sumDiag() -> Scalar
     func sum(axis: Int, keepDim: Bool) -> Self
+    func sum(axes: ClosedRange<Int>, keepDim: Bool) -> Self
+    func sum(axes: Range<Int>, keepDim: Bool) -> Self
     func zscore() -> (norm: Self, mean: Self, std: Self)
+    func zscore_image_norm(mean: Self, std: Self) -> Self
     func zscore_image() -> (norm: Self, mean: Self, std: Self)
     
     func sigmoid() -> Self

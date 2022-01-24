@@ -65,12 +65,22 @@ public struct Sequence<Tensor: Tensorable> {
         return batch_norms
     }
     
+    public var batch_norms2D: [BatchNorm2D<Tensor>] {
+        var batch_norms = [BatchNorm2D<Tensor>]()
+        for layer in layers {
+            if let layer = layer as? BatchNorm2D {
+                batch_norms.append(layer)
+            }
+        }
+        return batch_norms
+    }
+    
     public var predicted: Variable<Tensor> {
         return layers.last!
     }
     
     public init(_ layers: [Layer<Tensor>]) {
-        // Link linear layers if we need to
+        // Link layers if we need to
         for i in 0..<layers.count {
             if i == 0 { continue }
             let prev_layer = layers[i - 1]
@@ -305,6 +315,7 @@ public final class BatchNorm<Tensor: Tensorable>: Layer<Tensor> {
     private var running_mean: Tensor?
     private var running_std: Tensor?
     private var sample_std: Tensor?
+    private var sample_mean: Tensor?
     private var momentum: Tensor.Scalar
     
     public var training: Bool
@@ -317,9 +328,9 @@ public final class BatchNorm<Tensor: Tensorable>: Layer<Tensor> {
     }
     
     // Placeholder in case input currently unknown (we haven't fed forward)
-    public init(_ input: Variable<Tensor> = Placeholder(), to: Int, momentum: Tensor.Scalar = 0.9, training: Bool = true, tag: String = "") {
-        let gamma = Variable(Tensor(shape: [to, 1], repeating: 4))
-        let beta = Variable(Tensor(shape: [to, 1], repeating: 5))
+    public init(_ input: Variable<Tensor> = Placeholder(), to: Int, momentum: Tensor.Scalar = 0.99, training: Bool = true, tag: String = "") {
+        let gamma = Variable(Tensor(shape: [to, 1], repeating: 1))
+        let beta = Variable(Tensor(shape: [to, 1], repeating: 0.01))
         self.training = training
         self.momentum = momentum
         super.init(inputs: [input, gamma, beta], tag: tag)
@@ -346,7 +357,8 @@ public final class BatchNorm<Tensor: Tensorable>: Layer<Tensor> {
             }
             // Cache
             self.data_norm = data_norm
-            self.sample_std = sample_std // needed for backprop
+            self.sample_std = sample_std
+            self.sample_mean = sample_mean
         } else {
             let data_norm = (data - self.running_mean!.transpose()) / self.running_std!.transpose()
             out = gamma * data_norm + beta
@@ -355,14 +367,31 @@ public final class BatchNorm<Tensor: Tensorable>: Layer<Tensor> {
     
     public override func backward(dOut: Tensor?) {
         // Clarify inputs
-        let data_norm = data_norm!
+        let data = inputs[0].out!
         let gamma = inputs[1].out!
+        let sample_mean = sample_mean!.transpose()
         let sample_std = sample_std!.transpose()
+        let data_norm = data_norm!
+        let data_centered = data - sample_mean
+        
+        // Duplicate use
+        let m = Tensor.Scalar(data.shape[1])
+        let div_std = 1.0 / (sample_std + 0.0001).sqrt()
+        let dub_data_centered = 2.0 * data_centered
         // Get grad for data
         let gradData_norm = dOut! * gamma
-        let m = Tensor.Scalar(dOut!.shape[1])
-        // Simplified equation
-        let gradData = (1.0 / m) / sample_std * (m * gradData_norm - gradData_norm.sum(axis: 1, keepDim: true) - data_norm * (gradData_norm * data_norm).sum(axis: 1, keepDim: true))
+        // grad std calculation
+        let gradStd = (gradData_norm * data_centered).sum(axis: 1, keepDim: true) * (-0.5 * (sample_std + 0.0001).pow(-1.5))
+//        let gradStd = (gradData_norm * data_centered * (-0.5 * (sample_std + 0.0001).pow(-1.5))).sum(axis: 1, keepDim: true)
+        // grad mean calculation
+        let gradMean1 = (gradData_norm * (-1.0 * div_std)).sum(axis: 1, keepDim: true)
+        let gradMean2 = gradStd * (-dub_data_centered).sum(axis: 1, keepDim: true) / m
+        let gradMean = gradMean1 + gradMean2
+        // final grad data calculation
+        let gradData1 = gradData_norm * div_std
+        let gradData2 = gradStd * dub_data_centered / m
+        let gradData3 = gradMean / m
+        let gradData = gradData1 + gradData2 + gradData3
         // Get grad for gamma
         let gradGamma = (dOut! * data_norm).sum(axis: 1, keepDim: true)
         // Get grad for beta
@@ -371,6 +400,141 @@ public final class BatchNorm<Tensor: Tensorable>: Layer<Tensor> {
         grads[0] = gradData
         grads[1] = gradGamma
         grads[2] = gradBeta
+    }
+}
+
+// MARK: BatchNorm2D
+public final class BatchNorm2D<Tensor: Tensorable>: Layer<Tensor> {
+    
+    private var data_norm: Tensor?
+    fileprivate var running_mean: Tensor?
+    fileprivate var running_std: Tensor?
+    private var sample_std: Tensor?
+    private var sample_mean: Tensor?
+    private var momentum: Tensor.Scalar
+    
+    public var training: Bool
+    
+    public var gamma: Variable<Tensor> {
+        return inputs[1]
+    }
+    public var beta: Variable<Tensor> {
+        return inputs[2]
+    }
+    
+    // Placeholder in case input currently unknown (we haven't fed forward)
+    public init(_ input: Variable<Tensor> = Placeholder(), to: Int, momentum: Tensor.Scalar = 0.99, training: Bool = true, tag: String = "") {
+        let gamma = Variable(Tensor(shape: [to], repeating: 1))
+        let beta = Variable(Tensor(shape: [to], repeating: 0.01))
+        self.training = training
+        self.momentum = momentum
+        super.init(inputs: [input, gamma, beta], tag: tag)
+        grads = Array(repeating: Tensor(shape: [], grid: []), count: 3)
+    }
+    
+    public override func forward() {
+        // Clarify inputs
+        let data = inputs[0].out!
+        let gamma = inputs[1].out!
+        let beta = inputs[2].out!
+        if training {
+            // Make our normalized and scaled output (transpose so we get mean/std for each feature)
+            let (data_norm, sample_mean, sample_std) = data.zscore_image()
+            out = cadd(cmul(data_norm, with: gamma), with: beta)
+            // Running mean and std
+            if let running_mean = self.running_mean, let running_std = self.running_std {
+                self.running_mean = momentum * running_mean + (1 - momentum) * sample_mean
+                self.running_std = momentum * running_std + (1 - momentum) * sample_std
+            } else {
+                self.running_mean = (1 - momentum) * sample_mean
+                self.running_std = (1 - momentum) * sample_std
+            }
+            // Cache
+            self.data_norm = data_norm
+            self.sample_std = sample_std // needed for backprop
+            self.sample_mean = sample_mean
+        } else {
+            let data_norm = data.zscore_image_norm(mean: self.running_mean!, std: self.running_std!)
+            out = cadd(cmul(data_norm, with: gamma), with: beta)
+        }
+    }
+    
+    public override func backward(dOut: Tensor?) {
+        // Clarify inputs
+        let data = inputs[0].out!
+        let gamma = inputs[1].out!
+        let sample_mean = sample_mean!
+        let sample_std = sample_std!
+        let data_norm = data_norm!
+        let data_centered = cadd(data, with: -1.0 * sample_mean)
+
+        // Duplicate use
+        let m = Tensor.Scalar(data.shape[0] * data.shape[2] * data.shape[3])
+        let div_std = 1.0 / (sample_std + 0.0001).sqrt()
+        let dub_data_centered = 2.0 * data_centered
+        // Get grad for data
+        let gradData_norm = cmul(dOut!, with: gamma)
+        // grad std calculation
+        let gradStd = (gradData_norm * data_centered).sum(axis: 0, keepDim: false).sum(axes: 1...2, keepDim: false) * -0.5 * (sample_std + 0.0001).pow(-1.5)
+//        let gradStd = (gradData_norm * cmul(data_centered, with: -0.5 * (sample_std + 0.0001).pow(-1.5))).sum(axis: 0, keepDim: false).sum(axes: 1...2, keepDim: false)
+        // grad mean calculation
+        let gradMean1 = cmul(gradData_norm, with: -1.0 * div_std).sum(axis: 0, keepDim: false).sum(axes: 1...2, keepDim: false)
+        let gradMean2 = ((-dub_data_centered).sum(axis: 0, keepDim: false).sum(axes: 1...2, keepDim: false) / m) * gradStd
+//        let gradMean2 = cmul((-dub_data_centered).sum(axis: 0, keepDim: false), with: gradStd).sum(axes: 1...2, keepDim: false) / m
+        let gradMean = (gradMean1 + gradMean2)
+        // final grad data calculation
+        let gradData1 = cmul(gradData_norm, with: div_std)
+        let gradData2 = cmul(dub_data_centered, with: gradStd) / m
+        let gradData3 = gradMean / m
+        let gradData = cadd(gradData1 + gradData2, with: gradData3)
+        // Get grad for gamma
+        let gradGamma = (dOut! * data_norm).sum(axis: 0, keepDim: false).sum(axes: 1...2, keepDim: false)
+        // Get grad for beta
+        let gradBeta = dOut!.sum(axis: 0, keepDim: false).sum(axes: 1...2, keepDim: false)
+        // Now set our grads
+        grads[0] = gradData
+        grads[1] = gradGamma
+        grads[2] = gradBeta
+    }
+    
+    private func cmul(_ nd: Tensor, with vec: Tensor) -> Tensor {
+        if nd.shape.count == 4 && vec.shape.count == 1 && vec.shape[0] == nd.shape[1] {
+            var t = nd
+            for n in 0..<nd.shape[0] {
+                let nthImage = nd[t3D: n]
+                for d in 0..<nd.shape[1] {
+                    t[t3D: n][mat: d] = nthImage[mat: d] * vec[val: d]
+                }
+            }
+            return t
+        } else if nd.shape.count == 3 && vec.shape.count == 1 && vec.shape[0] == nd.shape[0] {
+            var t = nd
+            for d in 0..<nd.shape[0] {
+                t[mat: d] = nd[mat: d] * vec[val: d]
+            }
+            return t
+        }
+        fatalError("Incompatible type for channel wise multiplication")
+    }
+    
+    private func cadd(_ nd: Tensor, with vec: Tensor) -> Tensor {
+        if nd.shape.count == 4 && vec.shape.count == 1 && vec.shape[0] == nd.shape[1] {
+            var t = nd
+            for n in 0..<nd.shape[0] {
+                let nthImage = nd[t3D: n]
+                for d in 0..<nd.shape[1] {
+                    t[t3D: n][mat: d] = nthImage[mat: d] + vec[val: d]
+                }
+            }
+            return t
+        } else if nd.shape.count == 3 && vec.shape.count == 1 && vec.shape[0] == nd.shape[0] {
+            var t = nd
+            for d in 0..<nd.shape[0] {
+                t[mat: d] = nd[mat: d] + vec[val: d]
+            }
+            return t
+        }
+        fatalError("Incompatible type for channel wise addition")
     }
 }
 
@@ -775,7 +939,7 @@ public final class Process<Tensor: Tensorable> {
             self.std = std
             return norm
         case .pred:
-            return (input - mean) / std
+            return input.zscore_image_norm(mean: mean, std: std)
         }
     }
 }
